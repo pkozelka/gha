@@ -4,6 +4,7 @@ use std::{fs, process};
 use serde::Serialize;
 
 mod git_utils;
+mod github_utils;
 
 #[derive(Parser, Debug)]
 #[command(name = "myapp")]
@@ -32,9 +33,9 @@ enum Commands {
         #[arg(long)]
         repo: Option<String>,
 
-        /// Workflow file name, e.g. "ci.yml"
+        /// Workflow file name, e.g., "ci.yml" (default: auto-detect if only one workflow exists)
         #[arg(long)]
-        workflow: String,
+        workflow: Option<String>,
 
         /// Branch or tag ref
         #[arg(long)]
@@ -111,7 +112,19 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             };
-            if let Err(e) = workflow_dispatch(&repo, workflow, &repo_ref, token, args, mode).await {
+            // resolve workflow
+            let workflow = match workflow {
+                Some(w) => w.clone(),
+                None => match github_utils::default_workflow_from_dir() {
+                    None => anyhow::bail!("Could not determine workflow automatically. Please use --workflow."),
+                    Some(workflow) => {
+                        tracing::debug!("Using single existing workflow as default: {workflow}");
+                        workflow
+                    },
+                }
+            };
+
+            if let Err(e) = workflow_dispatch(&repo, &workflow, &repo_ref, token, args, mode).await {
                 error!("Workflow dispatch failed: {}", e);
                 exitcode::SOFTWARE
             } else {
