@@ -2,7 +2,6 @@ use clap::Parser;
 use tracing::{info, error};
 use std::{fs, process};
 use serde::Serialize;
-use crate::git_utils::{default_repo_from_git, RepoInfo};
 
 mod git_utils;
 
@@ -38,8 +37,8 @@ enum Commands {
         workflow: String,
 
         /// Branch or tag ref
-        #[arg(long, default_value = "main")]
-        r#ref: String,
+        #[arg(long)]
+        r#ref: Option<String>,
 
         /// GitHub token (can also be provided via GITHUB_TOKEN env)
         #[arg(long, env = "GITHUB_TOKEN")]
@@ -93,11 +92,26 @@ async fn main() -> anyhow::Result<()> {
                 None => {
                     match git_utils::default_repo_from_git() {
                         None => anyhow::bail!("Missing repo, and unable to find it locally"),
-                        Some(repo) => repo.to_string()
+                        Some(repo) => {
+                            tracing::debug!("Using default repo: {}", repo);
+                            repo.to_string()
+                        }
                     }
                 }
             };
-            if let Err(e) = workflow_dispatch(&repo, workflow, r#ref, token, args, mode).await {
+            let repo_ref = match r#ref {
+                Some(repo_ref) => repo_ref.to_string(),
+                None => {
+                    match git_utils::default_ref_from_git() {
+                        None => anyhow::bail!("Missing ref, and unable to find it locally"),
+                        Some(repo_ref) => {
+                            tracing::debug!("Using default ref: {}", repo_ref);
+                            repo_ref.to_string()
+                        }
+                    }
+                }
+            };
+            if let Err(e) = workflow_dispatch(&repo, workflow, &repo_ref, token, args, mode).await {
                 error!("Workflow dispatch failed: {}", e);
                 exitcode::SOFTWARE
             } else {

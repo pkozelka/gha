@@ -52,3 +52,44 @@ pub(crate) fn default_repo_from_git() -> Option<RepoInfo> {
 
     None
 }
+
+#[derive(Debug, Clone)]
+pub struct RefInfo {
+    r#ref: String,
+}
+
+impl Display for RefInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.r#ref)
+    }
+}
+
+pub fn default_ref_from_git() -> Option<RefInfo> {
+    // Try to get branch name
+    let output = Command::new("git")
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !branch.is_empty() {
+            return Some(RefInfo { r#ref: branch });
+        }
+    }
+
+    // If not on a branch (detached HEAD), fall back to commit SHA
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !sha.is_empty() {
+            return Some(RefInfo { r#ref: sha });
+        }
+    }
+
+    None
+}
