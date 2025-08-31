@@ -1,0 +1,25 @@
+[package]
+name = "gha"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+# Standard exit codes
+exitcode = "1.1"
+
+# Error handling (optional but recommended)
+anyhow = "1"
+thiserror = "1"
+
+[dev-dependencies]
+# CLI testing
+assert_cmd = "2"
+assert_fs = "1"
+predicates = "3"
