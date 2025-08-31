@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use tracing::{info, error};
 use std::{fs, process};
 use serde::Serialize;
@@ -7,8 +7,8 @@ mod git_utils;
 mod github_utils;
 
 #[derive(Parser, Debug)]
-#[command(name = "myapp")]
-#[command(about = "A Rust CLI application template", long_about = None)]
+#[command(name = "gha")]
+#[command(about = "GitHub Action tool", long_about = None)]
 struct Cli {
     /// Activate verbose logging
     #[arg(short, long, action = clap::ArgAction::Count)]
@@ -133,8 +133,13 @@ async fn main() -> anyhow::Result<()> {
         }
 
         None => {
-            error!("No command provided");
-            eprintln!("Error: No command provided. Try --help.");
+            error!("No command provided. Showing help:");
+
+            // Print help to stdout
+            let mut cmd = Cli::command();
+            cmd.print_help().unwrap();
+            println!(); // newline after help
+
             exitcode::USAGE
         }
     };
