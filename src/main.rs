@@ -94,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
                     match git_utils::default_repo_from_git() {
                         None => anyhow::bail!("Missing repo, and unable to find it locally"),
                         Some(repo) => {
-                            tracing::debug!("Using default repo: {}", repo);
+                            tracing::debug!("Using default repo: {repo}");
                             repo.to_string()
                         }
                     }
@@ -106,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
                     match git_utils::default_ref_from_git() {
                         None => anyhow::bail!("Missing ref, and unable to find it locally"),
                         Some(repo_ref) => {
-                            tracing::debug!("Using default ref: {}", repo_ref);
+                            tracing::debug!("Using default ref: {repo_ref}");
                             repo_ref.to_string()
                         }
                     }
@@ -125,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
             };
 
             if let Err(e) = workflow_dispatch(&repo, &workflow, &repo_ref, token, args, mode).await {
-                error!("Workflow dispatch failed: {}", e);
+                error!("Workflow dispatch failed: {e}");
                 exitcode::SOFTWARE
             } else {
                 exitcode::OK
@@ -163,7 +163,7 @@ async fn workflow_dispatch(
             };
             inputs.insert(key.to_string(), val);
         } else {
-            return Err(anyhow::anyhow!("Invalid arg format: {}", arg));
+            return Err(anyhow::anyhow!("Invalid arg format: {arg}"));
         }
     }
 
@@ -180,37 +180,29 @@ async fn workflow_dispatch(
     let json_str = serde_json::to_string_pretty(&payload)?;
 
     if mode == "curl" {
+        let escaped_json = json_str.replace('\'', "\\'");
         println!(
             "curl -X POST \\
   -H 'Accept: application/vnd.github+json' \\
-  -H 'Authorization: Bearer {}' \\
+  -H 'Authorization: Bearer {token}' \\
   -H 'X-GitHub-Api-Version: 2022-11-28' \\
-  https://api.github.com/repos/{}/actions/workflows/{}/dispatches \\
-  -d '{}'",
-            token,
-            repo,
-            workflow,
-            json_str.replace('\'', "\\'")
-        );
+  https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches \\
+  -d '{escaped_json}'");
     } else if mode == "make" {
+        let escaped_json = json_str.replace('\'', "\\'");
         println!(
             "\tcurl -X POST \\\n\
         \t  -H 'Accept: application/vnd.github+json' \\\n\
-        \t  -H 'Authorization: Bearer {}' \\\n\
+        \t  -H 'Authorization: Bearer {token}' \\\n\
         \t  -H 'X-GitHub-Api-Version: 2022-11-28' \\\n\
-        \t  https://api.github.com/repos/{}/actions/workflows/{}/dispatches \\\n\
-        \t  -d '{}'",
-            token,
-            repo,
-            workflow,
-            json_str.replace('\'', "\\'")
-        );
+        \t  https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches \\\n\
+        \t  -d '{escaped_json}'");
     } else if mode == "call" {
         let client = reqwest::Client::new();
         let res = client
             .post(&url)
             .header("Accept", "application/vnd.github+json")
-            .header("Authorization", format!("Bearer {}", token))
+            .header("Authorization", format!("Bearer {token}", ))
             .header("X-GitHub-Api-Version", "2022-11-28")
             .json(&payload)
             .send()
@@ -219,11 +211,7 @@ async fn workflow_dispatch(
         let response_status = res.status();
         if !response_status.is_success() {
             let text = res.text().await?;
-            return Err(anyhow::anyhow!(
-                "GitHub API error: {} - {}",
-                response_status,
-                text
-            ));
+            return Err(anyhow::anyhow!("GitHub API error: {response_status} - {text}"));
         }
 
         info!("Workflow dispatch successful");
