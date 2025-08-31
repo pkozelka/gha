@@ -2,6 +2,9 @@ use clap::Parser;
 use tracing::{info, error};
 use std::{fs, process};
 use serde::Serialize;
+use crate::git_utils::{default_repo_from_git, RepoInfo};
+
+mod git_utils;
 
 #[derive(Parser, Debug)]
 #[command(name = "myapp")]
@@ -28,7 +31,7 @@ enum Commands {
     WorkflowDispatch {
         /// GitHub repository in the form "owner/repo"
         #[arg(long)]
-        repo: String,
+        repo: Option<String>,
 
         /// Workflow file name, e.g. "ci.yml"
         #[arg(long)]
@@ -59,7 +62,7 @@ struct DispatchPayload {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let log_level = match cli.verbose {
@@ -85,7 +88,16 @@ async fn main() {
                  args,
                  mode,
              }) => {
-            if let Err(e) = workflow_dispatch(repo, workflow, r#ref, token, args, mode).await {
+            let repo = match repo {
+                Some(repo) => repo.to_string(),
+                None => {
+                    match git_utils::default_repo_from_git() {
+                        None => anyhow::bail!("Missing repo, and unable to find it locally"),
+                        Some(repo) => repo.to_string()
+                    }
+                }
+            };
+            if let Err(e) = workflow_dispatch(&repo, workflow, r#ref, token, args, mode).await {
                 error!("Workflow dispatch failed: {}", e);
                 exitcode::SOFTWARE
             } else {
