@@ -46,7 +46,7 @@ enum Commands {
         #[arg(long = "arg")]
         args: Vec<String>,
 
-        /// Mode: "curl" (print command) or "call" (execute)
+        /// Mode: "curl" (print curl), "make" (Makefile syntax), or "call" (execute)
         #[arg(long, default_value = "curl")]
         mode: String,
     },
@@ -148,6 +148,19 @@ async fn workflow_dispatch(
   -H 'X-GitHub-Api-Version: 2022-11-28' \\
   https://api.github.com/repos/{}/actions/workflows/{}/dispatches \\
   -d '{}'",
+            token,
+            repo,
+            workflow,
+            json_str.replace('\'', "\\'")
+        );
+    } else if mode == "make" {
+        println!(
+            "\tcurl -X POST \\\n\
+        \t  -H 'Accept: application/vnd.github+json' \\\n\
+        \t  -H 'Authorization: Bearer {}' \\\n\
+        \t  -H 'X-GitHub-Api-Version: 2022-11-28' \\\n\
+        \t  https://api.github.com/repos/{}/actions/workflows/{}/dispatches \\\n\
+        \t  -d '{}'",
             token,
             repo,
             workflow,
