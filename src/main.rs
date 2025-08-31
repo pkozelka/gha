@@ -1,6 +1,7 @@
 use clap::{CommandFactory, Parser};
 use tracing::{info, error};
 use std::{fs, process};
+use std::path::PathBuf;
 use serde::Serialize;
 
 mod git_utils;
@@ -61,8 +62,33 @@ struct DispatchPayload {
     inputs: serde_json::Map<String, serde_json::Value>,
 }
 
+/// Try to load `.env` from current directory, or home directory.
+/// Returns `true` if a file was loaded, `false` otherwise.
+fn load_env_file() -> bool {
+    // Try current directory
+    if dotenvy::from_filename(".env").is_ok() {
+        tracing::debug!("Loaded .env file from current directory");
+        return true;
+    }
+
+    // Try home directory
+    if let Some(home_dir) = dirs::home_dir() {
+        let env_path: PathBuf = home_dir.join(".env");
+        if dotenvy::from_filename(&env_path).is_ok() {
+            tracing::debug!("Loaded .env file from {}", env_path.display());
+            return true;
+        }
+    }
+
+    false
+}
+
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Load .env from current dir or home
+    load_env_file();
+
     let cli = Cli::parse();
 
     let log_level = match cli.verbose {
@@ -208,6 +234,7 @@ async fn workflow_dispatch(
             .post(&url)
             .header("Accept", "application/vnd.github+json")
             .header("Authorization", format!("Bearer {token}", ))
+            .header("User-Agent", "gha")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .json(&payload)
             .send()
