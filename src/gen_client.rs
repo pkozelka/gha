@@ -103,7 +103,7 @@ fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
         .map(|(name, raw)| InputInfo {
             name,
             description: raw.description,
-            required: raw.required,
+            required: raw.required && raw.default.is_none(),
             default: raw.default,
             r#type: raw.r#type,
             options: raw.options.unwrap_or_default(),
