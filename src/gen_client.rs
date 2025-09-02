@@ -120,7 +120,7 @@ fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
 fn render_makefile(workflows: &[WorkflowInfo]) -> Result<String> {
     let mut buf = String::new();
 
-    // Header: variables and curl macro
+    // Defaults from git
     let repo = git_utils::default_repo_from_git()
         .map(|r| format!("{}/{}", r.owner, r.repo))
         .unwrap_or_else(|| "<owner>/<repo>".into());
@@ -128,30 +128,29 @@ fn render_makefile(workflows: &[WorkflowInfo]) -> Result<String> {
         .map(|r| r.to_string())
         .unwrap_or_else(|| "main".into());
 
+    // Shared vars
     buf.push_str("GITHUB_TOKEN ?=\n");
     buf.push_str(&format!("REPO ?={repo}\n"));
     buf.push_str(&format!("REF ?={reference}\n\n"));
 
+    // Shared curl base
     buf.push_str("CURL_BASE = curl -sSL -H \"Accept: application/vnd.github+json\" \\\n");
     buf.push_str("\t-H \"Authorization: Bearer $(GITHUB_TOKEN)\" \\\n");
     buf.push_str("\t-H \"X-GitHub-Api-Version: 2022-11-28\"\n\n");
 
+    // Macro: wraps the JSON envelope
     buf.push_str("define DISPATCH\n");
     buf.push_str("\t$(CURL_BASE) -X POST \\\n");
     buf.push_str("\t  https://api.github.com/repos/$(REPO)/actions/workflows/$1/dispatches \\\n");
-    buf.push_str("\t  -d \"$2\"\n");
+    buf.push_str("\t  -d '{\"ref\":\"$(REF)\",\"inputs\":{$2}}'\n");
     buf.push_str("endef\n\n");
 
-    // Track all target names for "all" target
     let mut all_targets = Vec::new();
-
-    // Body: workflow targets
     for wf in workflows {
         let targets = render_workflow(&mut buf, wf)?;
         all_targets.extend(targets);
     }
 
-    // Phony all
     buf.push_str(".PHONY: all\n");
     buf.push_str("all: ");
     for t in &all_targets {
@@ -163,6 +162,23 @@ fn render_makefile(workflows: &[WorkflowInfo]) -> Result<String> {
     Ok(buf)
 }
 
+/// Build only the `inputs` JSON fragment
+fn make_inputs(inputs: &[InputInfo], choice: Option<(&String, &String)>) -> String {
+    let mut parts = Vec::new();
+
+    for inp in inputs {
+        if let Some((cname, opt)) = &choice {
+            if &inp.name == *cname {
+                parts.push(format!("\"{}\":\"{}\"", inp.name, opt));
+                continue;
+            }
+        }
+        let var = inp.name.to_uppercase();
+        parts.push(format!("\"{}\":\"$({})\"", inp.name, var));
+    }
+
+    parts.join(",")
+}
 /// Render a single workflow block, returning all target names
 fn render_workflow(buf: &mut String, wf: &WorkflowInfo) -> Result<Vec<String>> {
     let base_target = wf
@@ -214,26 +230,34 @@ fn render_target(
     wf: &WorkflowInfo,
     choice: Option<(&String, &String)>,
 ) -> Result<()> {
-    // Comment required inputs instead of echo
+    // Header
+    buf.push_str(&format!("# Workflow: {}\n", wf.name));
     for inp in &wf.inputs {
-        if inp.required {
-            let var = inp.name.to_uppercase();
-            buf.push_str(&format!("# requires: {var}\n"));
-        }
+        buf.push_str(&format!(
+            "#   {}: {}{}{}\n",
+            inp.name,
+            inp.description.as_deref().unwrap_or(""),
+            if inp.required { " (required)" } else { "" },
+            inp.default
+                .as_ref()
+                .map(|d| format!(" [default: {}]", d))
+                .unwrap_or_default(),
+        ));
     }
 
     buf.push_str(&format!("{target}:\n"));
 
-    // Only enforce required inputs with test
+    // Required checks inline with comment
     for inp in &wf.inputs {
         if inp.required {
             let var = inp.name.to_uppercase();
-            buf.push_str(&format!("\ttest -n \"$( {var} )\"\n"));
+            buf.push_str(&format!("\ttest -n \"$( {var} )\" # requires: {var}\n"));
         }
     }
 
-    let payload = make_payload(&wf.inputs, choice);
-    buf.push_str(&format!("\t$(call DISPATCH,{},{})\n\n", wf.file, payload));
+    // Payload inputs only
+    let inputs_str = make_inputs(wf.inputs.as_slice(), choice);
+    buf.push_str(&format!("\t$(call DISPATCH,{},{})\n\n", wf.file, inputs_str));
 
     Ok(())
 }
