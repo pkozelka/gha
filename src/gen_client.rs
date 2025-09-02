@@ -1,10 +1,10 @@
+use crate::git_utils;
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
 };
-use anyhow::{Result, Context};
-use crate::git_utils;
 
 #[derive(Debug, Deserialize)]
 struct WorkflowRaw {
@@ -251,7 +251,7 @@ fn render_target(
     for inp in &wf.inputs {
         if inp.required {
             let var = inp.name.to_uppercase();
-            buf.push_str(&format!("\ttest -n \"$( {var} )\" # requires: {var}\n"));
+            buf.push_str(&format!("\ttest -n \"$({var})\" # requires: {var}\n"));
         }
     }
 
@@ -260,29 +260,4 @@ fn render_target(
     buf.push_str(&format!("\t$(call DISPATCH,{},{})\n\n", wf.file, inputs_str));
 
     Ok(())
-}
-
-/// Build JSON payload string
-fn make_payload(inputs: &[InputInfo], choice: Option<(&String, &String)>) -> String {
-    let mut payload = String::from("{\\\"ref\\\":\\\"$(REF)\\\",\\\"inputs\\\":{");
-
-    let mut first = true;
-    for inp in inputs {
-        if !first {
-            payload.push(',');
-        }
-        first = false;
-
-        if let Some((cname, opt)) = &choice {
-            if &inp.name == *cname {
-                payload.push_str(&format!("\\\"{}\\\":\\\"{}\\\"", inp.name, opt));
-                continue;
-            }
-        }
-
-        let var = inp.name.to_uppercase();
-        payload.push_str(&format!("\\\"{}\\\":\\\"$({})\\\"", inp.name, var));
-    }
-    payload.push_str("}}");
-    payload
 }

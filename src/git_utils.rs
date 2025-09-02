@@ -80,7 +80,7 @@ pub fn default_ref_from_git() -> Option<RefInfo> {
     if output.status.success() {
         let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !branch.is_empty() {
-            return Some(RefInfo { r#ref: branch });
+            return Some(RefInfo::new(branch));
         }
     }
 
@@ -93,7 +93,7 @@ pub fn default_ref_from_git() -> Option<RefInfo> {
     if output.status.success() {
         let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !sha.is_empty() {
-            return Some(RefInfo { r#ref: sha });
+            return Some(RefInfo::new(sha));
         }
     }
 
