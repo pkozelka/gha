@@ -30,6 +30,7 @@ enum Commands {
     },
 
     /// Dispatch a GitHub Actions workflow
+    #[clap(alias = "wd")]
     WorkflowDispatch {
         /// GitHub repository in the form "owner/repo"
         #[arg(long)]
@@ -56,9 +57,10 @@ enum Commands {
         mode: String,
     },
     /// Generate Makefile clients for workflow_dispatch workflows
+    #[clap(alias = "gen")]
     GenWorkflowClient {
         /// Path to write the generated Makefile
-        #[arg(long, default_value = "target/Makefile")]
+        #[arg(short,long, default_value = "workflow_dispatch.Makefile")]
         output_file: PathBuf,
     },
 }
