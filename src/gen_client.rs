@@ -1,8 +1,10 @@
 use serde::Deserialize;
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use anyhow::{Result, Context};
 use crate::git_utils;
-use crate::git_utils::RefInfo;
 
 #[derive(Debug, Deserialize)]
 struct WorkflowRaw {
@@ -38,9 +40,9 @@ struct WorkflowInput {
 
 /// Normalized workflow info
 struct WorkflowInfo {
-    file: String,             // workflow file name (e.g. hello.yml)
-    name: String,             // workflow "name:" field or file name
-    inputs: Vec<InputInfo>,   // parsed inputs
+    file: String,
+    name: String,
+    inputs: Vec<InputInfo>,
 }
 
 struct InputInfo {
@@ -95,14 +97,18 @@ fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
         None => return Ok(None),
     };
 
-    let inputs = dispatch.inputs.into_iter().map(|(name, raw)| InputInfo {
-        name,
-        description: raw.description,
-        required: raw.required,
-        default: raw.default,
-        r#type: raw.r#type,
-        options: raw.options.unwrap_or_default(),
-    }).collect();
+    let inputs = dispatch
+        .inputs
+        .into_iter()
+        .map(|(name, raw)| InputInfo {
+            name,
+            description: raw.description,
+            required: raw.required,
+            default: raw.default,
+            r#type: raw.r#type,
+            options: raw.options.unwrap_or_default(),
+        })
+        .collect();
 
     let file = path.file_name().unwrap().to_string_lossy().to_string();
     let name = wf.name.unwrap_or_else(|| file.clone());
@@ -118,7 +124,9 @@ fn render_makefile(workflows: &[WorkflowInfo]) -> Result<String> {
     let repo = git_utils::default_repo_from_git()
         .map(|r| format!("{}/{}", r.owner, r.repo))
         .unwrap_or_else(|| "<owner>/<repo>".into());
-    let reference = git_utils::default_ref_from_git().unwrap_or_else(|| RefInfo::new("main".to_string()));
+    let reference = git_utils::default_ref_from_git()
+        .map(|r| r.to_string())
+        .unwrap_or_else(|| "main".into());
 
     buf.push_str("GITHUB_TOKEN ?=\n");
     buf.push_str(&format!("REPO ?={repo}\n"));
@@ -130,21 +138,40 @@ fn render_makefile(workflows: &[WorkflowInfo]) -> Result<String> {
 
     buf.push_str("define DISPATCH\n");
     buf.push_str("\t$(CURL_BASE) -X POST \\\n");
-    buf.push_str("\t  https://api.github.com/repos/$(REPO)/actions/workflows/$$1/dispatches \\\n");
-    buf.push_str("\t  -d \"$$2\"\n");
+    buf.push_str("\t  https://api.github.com/repos/$(REPO)/actions/workflows/$1/dispatches \\\n");
+    buf.push_str("\t  -d \"$2\"\n");
     buf.push_str("endef\n\n");
+
+    // Track all target names for "all" target
+    let mut all_targets = Vec::new();
 
     // Body: workflow targets
     for wf in workflows {
-        render_workflow(&mut buf, wf)?;
+        let targets = render_workflow(&mut buf, wf)?;
+        all_targets.extend(targets);
     }
+
+    // Phony all
+    buf.push_str(".PHONY: all\n");
+    buf.push_str("all: ");
+    for t in &all_targets {
+        buf.push_str(t);
+        buf.push(' ');
+    }
+    buf.push('\n');
 
     Ok(buf)
 }
 
-/// Render a single workflow block
-fn render_workflow(buf: &mut String, wf: &WorkflowInfo) -> Result<()> {
-    let base_target = wf.file.trim_end_matches(".yml").trim_end_matches(".yaml");
+/// Render a single workflow block, returning all target names
+fn render_workflow(buf: &mut String, wf: &WorkflowInfo) -> Result<Vec<String>> {
+    let base_target = wf
+        .file
+        .trim_end_matches(".yml")
+        .trim_end_matches(".yaml")
+        .to_string();
+
+    let mut targets = Vec::new();
 
     // Comment header
     buf.push_str(&format!("# Workflow: {}\n", wf.name));
@@ -154,7 +181,10 @@ fn render_workflow(buf: &mut String, wf: &WorkflowInfo) -> Result<()> {
             inp.name,
             inp.description.as_deref().unwrap_or(""),
             if inp.required { " (required)" } else { "" },
-            inp.default.as_ref().map(|d| format!(" [default: {}]", d)).unwrap_or_default(),
+            inp.default
+                .as_ref()
+                .map(|d| format!(" [default: {}]", d))
+                .unwrap_or_default(),
         ));
     }
     buf.push('\n');
@@ -165,13 +195,16 @@ fn render_workflow(buf: &mut String, wf: &WorkflowInfo) -> Result<()> {
             for opt in &first.options {
                 let tname = format!("{}-{}", base_target, opt.to_lowercase());
                 render_target(buf, &tname, wf, Some((&first.name, opt)))?;
+                targets.push(tname);
             }
-            return Ok(());
+            return Ok(targets);
         }
     }
 
     // Default: single target
-    render_target(buf, base_target, wf, None)
+    render_target(buf, &base_target, wf, None)?;
+    targets.push(base_target);
+    Ok(targets)
 }
 
 /// Render one target
@@ -181,20 +214,25 @@ fn render_target(
     wf: &WorkflowInfo,
     choice: Option<(&String, &String)>,
 ) -> Result<()> {
-    buf.push_str(&format!("{target}:\n"));
-
-    // Required input checks
+    // Comment required inputs instead of echo
     for inp in &wf.inputs {
         if inp.required {
             let var = inp.name.to_uppercase();
-            buf.push_str(&format!(
-                "\t@test -n \"$( {var} )\" || (echo \"{var} is required\"; exit 1)\n"
-            ));
+            buf.push_str(&format!("# requires: {var}\n"));
+        }
+    }
+
+    buf.push_str(&format!("{target}:\n"));
+
+    // Only enforce required inputs with test
+    for inp in &wf.inputs {
+        if inp.required {
+            let var = inp.name.to_uppercase();
+            buf.push_str(&format!("\ttest -n \"$( {var} )\"\n"));
         }
     }
 
     let payload = make_payload(&wf.inputs, choice);
-
     buf.push_str(&format!("\t$(call DISPATCH,{},{})\n\n", wf.file, payload));
 
     Ok(())
