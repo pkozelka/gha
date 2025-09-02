@@ -21,8 +21,8 @@ struct WorkflowOn {
 
 #[derive(Debug, Deserialize)]
 struct WorkflowDispatch {
-    #[serde(default)]
-    inputs: std::collections::HashMap<String, WorkflowInput>,
+    #[serde(default, deserialize_with = "deserialize_ordered_inputs")]
+    inputs: Vec<(String, WorkflowInput)>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +36,37 @@ struct WorkflowInput {
     r#type: Option<String>, // e.g. "choice"
     #[serde(default)]
     options: Option<Vec<String>>,
+}
+
+// Custom deserializer to preserve mapping order for `inputs`
+fn deserialize_ordered_inputs<'de, D>(
+    deserializer: D,
+) -> Result<Vec<(String, WorkflowInput)>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct OrderedVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for OrderedVisitor {
+        type Value = Vec<(String, WorkflowInput)>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a mapping of inputs preserving order")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::MapAccess<'de>,
+        {
+            let mut vec = Vec::new();
+            while let Some((k, v)) = map.next_entry::<String, WorkflowInput>()? {
+                vec.push((k, v));
+            }
+            Ok(vec)
+        }
+    }
+
+    deserializer.deserialize_map(OrderedVisitor)
 }
 
 /// Normalized workflow info
