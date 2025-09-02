@@ -6,6 +6,7 @@ use serde::Serialize;
 
 mod git_utils;
 mod github_utils;
+mod gen_client;
 
 #[derive(Parser, Debug)]
 #[command(name = "gha")]
@@ -53,6 +54,12 @@ enum Commands {
         /// Mode: "curl" (print curl), "make" (Makefile syntax), or "call" (execute)
         #[arg(long, default_value = "curl")]
         mode: String,
+    },
+    /// Generate Makefile clients for workflow_dispatch workflows
+    GenWorkflowClient {
+        /// Path to write the generated Makefile
+        #[arg(long, default_value = "target/Makefile")]
+        output_file: PathBuf,
     },
 }
 
@@ -104,6 +111,14 @@ async fn main() -> anyhow::Result<()> {
     let exit_code = match &cli.command {
         Some(Commands::Run { name }) => {
             println!("Hello, {}!", name);
+            exitcode::OK
+        }
+
+        Some(Commands::GenWorkflowClient { output_file }) => {
+            if let Err(e) = gen_client::generate_makefile(output_file) {
+                error!("Failed to generate workflow client: {e:?}");
+                process::exit(exitcode::SOFTWARE);
+            }
             exitcode::OK
         }
 
