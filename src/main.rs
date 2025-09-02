@@ -62,25 +62,26 @@ struct DispatchPayload {
     inputs: serde_json::Map<String, serde_json::Value>,
 }
 
-/// Try to load `.env` from current directory, or home directory.
-/// Returns `true` if a file was loaded, `false` otherwise.
+/// Search upward from the current dir until HOME or root for `.env`.
+/// Returns true if a file was loaded, false otherwise.
 fn load_env_file() -> bool {
-    // Try current directory
-    if dotenvy::from_filename(".env").is_ok() {
-        tracing::debug!("Loaded .env file from current directory");
-        return true;
-    }
+    let home_dir = dirs::home_dir();
 
-    // Try home directory
-    if let Some(home_dir) = dirs::home_dir() {
-        let env_path: PathBuf = home_dir.join(".env");
-        if dotenvy::from_filename(&env_path).is_ok() {
-            tracing::debug!("Loaded .env file from {}", env_path.display());
-            return true;
+    // Start from the current directory
+    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    loop {
+        let candidate = dir.join(".env");
+        if dotenvy::from_filename(&candidate).is_ok() {
+            tracing::debug!("Loaded .env file from {}", candidate.display());
+            break true;
+        }
+
+        // Stop if we reached home or root
+        if Some(&dir) == home_dir.as_ref() || !dir.pop() {
+            break false;
         }
     }
-
-    false
 }
 
 
