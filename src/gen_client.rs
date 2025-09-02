@@ -145,14 +145,15 @@ fn render_makefile(workflows: &[WorkflowInfo]) -> Result<String> {
     buf.push_str("\t  -d '{\"ref\":\"$(REF)\",\"inputs\":{$2}}'\n");
     buf.push_str("endef\n\n");
 
+    buf.push_str("all:\n");
+
     let mut all_targets = Vec::new();
     for wf in workflows {
         let targets = render_workflow(&mut buf, wf)?;
         all_targets.extend(targets);
     }
 
-    buf.push_str(".PHONY: all\n");
-    buf.push_str("all: ");
+    buf.push_str(".PHONY: all ");
     for t in &all_targets {
         buf.push_str(t);
         buf.push(' ');
@@ -212,7 +213,7 @@ fn render_workflow(buf: &mut String, wf: &WorkflowInfo) -> Result<Vec<String>> {
     if let Some(first) = wf.inputs.first() {
         if first.r#type.as_deref() == Some("choice") && !first.options.is_empty() {
             for opt in &first.options {
-                let tname = format!("{}-{}", base_target, opt.to_lowercase());
+                let tname = format!("{}-{}", base_target, opt.to_lowercase().replace(':',"_"));
                 render_target(buf, &tname, wf, Some((&first.name, opt)))?;
                 targets.push(tname);
             }
