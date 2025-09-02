@@ -133,15 +133,13 @@ fn render_makefile(workflows: &[WorkflowInfo]) -> Result<String> {
     buf.push_str(&format!("REPO ?={repo}\n"));
     buf.push_str(&format!("REF ?={reference}\n\n"));
 
-    // Shared curl base
-    buf.push_str("CURL_BASE = curl -sSL -H \"Accept: application/vnd.github+json\" \\\n");
-    buf.push_str("\t-H \"Authorization: Bearer $(GITHUB_TOKEN)\" \\\n");
-    buf.push_str("\t-H \"X-GitHub-Api-Version: 2022-11-28\"\n\n");
 
     // Macro: wraps the JSON envelope
-    buf.push_str("define DISPATCH\n");
-    buf.push_str("\t$(CURL_BASE) -X POST \\\n");
-    buf.push_str("\t  https://api.github.com/repos/$(REPO)/actions/workflows/$1/dispatches \\\n");
+    buf.push_str("define WORKFLOW_DISPATCH\n");
+    buf.push_str("\tcurl -sSL -H \"Accept: application/vnd.github+json\" \\\n");
+    buf.push_str("\t-H \"Authorization: Bearer $(GITHUB_TOKEN)\" \\\n");
+    buf.push_str("\t-H \"X-GitHub-Api-Version: 2022-11-28\"\\\n");
+    buf.push_str("\thttps://api.github.com/repos/$(REPO)/actions/workflows/$1/dispatches \\\n");
     buf.push_str("\t  -d '{\"ref\":\"$(REF)\",\"inputs\":{$2}}'\n");
     buf.push_str("endef\n\n");
 
@@ -261,7 +259,7 @@ fn render_target(
 
     // Payload inputs only
     let inputs_str = make_inputs(wf.inputs.as_slice(), choice);
-    buf.push_str(&format!("\t$(call DISPATCH,{},{})\n\n", wf.file, inputs_str));
+    buf.push_str(&format!("\t$(call WORKFLOW_DISPATCH,{},{})\n\n", wf.file, inputs_str));
 
     Ok(())
 }
