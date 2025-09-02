@@ -40,8 +40,8 @@ struct WorkflowInput {
 
 /// Normalized workflow info
 struct WorkflowInfo {
-    file: String,
-    name: String,
+    pub file: String,
+    pub name: String,
     inputs: Vec<InputInfo>,
 }
 
@@ -181,6 +181,9 @@ fn make_inputs(inputs: &[InputInfo], choice: Option<(&String, &String)>) -> Stri
 }
 /// Render a single workflow block, returning all target names
 fn render_workflow(buf: &mut String, wf: &WorkflowInfo) -> Result<Vec<String>> {
+    // join input names into one string, comma separated
+    let input_names = wf.inputs.iter().map(|i| i.name.as_ref()).collect::<Vec<_>>().join(", ");
+    tracing::info!("workflow_dispatch: {}({input_names})", wf.file );
     let base_target = wf
         .file
         .trim_end_matches(".yml")
