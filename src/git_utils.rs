@@ -4,8 +4,8 @@ use std::process::Command;
 /// Try to get default "owner/repo" from git remote origin
 #[derive(Debug, Clone)]
 pub(crate) struct RepoInfo {
-    owner: String,
-    repo: String,
+    pub(crate) owner: String,
+    pub(crate) repo: String,
 }
 
 impl Display for RepoInfo {
@@ -56,6 +56,12 @@ pub(crate) fn default_repo_from_git() -> Option<RepoInfo> {
 #[derive(Debug, Clone)]
 pub struct RefInfo {
     r#ref: String,
+}
+
+impl RefInfo {
+    pub fn new(r#ref: String) -> Self {
+        Self { r#ref }
+    }
 }
 
 impl Display for RefInfo {
