@@ -32,6 +32,9 @@ enum Commands {
     /// Dispatch a GitHub Actions workflow
     #[clap(alias = "wd")]
     WorkflowDispatch {
+        /// Base directory for default repo and ref
+        #[arg(long, default_value = ".")]
+        base_dir: PathBuf,
         /// GitHub repository in the form "owner/repo"
         #[arg(long)]
         repo: Option<String>,
@@ -128,6 +131,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::WorkflowDispatch {
+                 base_dir,
                  repo,
                  workflow,
                  r#ref,
@@ -138,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
             let repo = match repo {
                 Some(repo) => repo.to_string(),
                 None => {
-                    match git_utils::default_repo_from_git() {
+                    match git_utils::default_repo_from_git(base_dir.as_path()) {
                         None => anyhow::bail!("Missing repo, and unable to find it locally"),
                         Some(repo) => {
                             tracing::debug!("Using default repo: {repo}");
@@ -150,7 +154,7 @@ async fn main() -> anyhow::Result<()> {
             let repo_ref = match r#ref {
                 Some(repo_ref) => repo_ref.to_string(),
                 None => {
-                    match git_utils::default_ref_from_git() {
+                    match git_utils::default_ref_from_git(base_dir.as_path()) {
                         None => anyhow::bail!("Missing ref, and unable to find it locally"),
                         Some(repo_ref) => {
                             tracing::debug!("Using default ref: {repo_ref}");
@@ -162,7 +166,7 @@ async fn main() -> anyhow::Result<()> {
             // resolve workflow
             let workflow = match workflow {
                 Some(w) => w.clone(),
-                None => match github_utils::default_workflow_from_dir() {
+                None => match github_utils::default_workflow_from_dir(base_dir) {
                     None => anyhow::bail!("Could not determine workflow automatically. Please use --workflow."),
                     Some(workflow) => {
                         tracing::debug!("Using single existing workflow as default: {workflow}");

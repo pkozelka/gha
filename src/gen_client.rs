@@ -93,7 +93,7 @@ pub fn generate_makefile(workflows_dir: &Path, output: &Path) -> Result<()> {
     let dir = workflows_dir.canonicalize()?;
     tracing::info!("Discovering workflows in {}", dir.display());
     let workflows = discover_and_parse(&dir)?;
-    let content = render_makefile(&workflows)?;
+    let content = render_makefile(&dir, &workflows)?;
     fs::write(output, content)
         .with_context(|| format!("failed to write {}", output.display()))
 }
@@ -152,14 +152,14 @@ fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
 }
 
 /// Render full Makefile text from collected workflows
-fn render_makefile(workflows: &[WorkflowInfo]) -> Result<String> {
+fn render_makefile(base_dir: &Path, workflows: &[WorkflowInfo]) -> Result<String> {
     let mut buf = String::new();
 
     // Defaults from git
-    let repo = git_utils::default_repo_from_git()
+    let repo = git_utils::default_repo_from_git(base_dir)
         .map(|r| format!("{}/{}", r.owner, r.repo))
         .unwrap_or_else(|| "<owner>/<repo>".into());
-    let reference = git_utils::default_ref_from_git()
+    let reference = git_utils::default_ref_from_git(base_dir)
         .map(|r| r.to_string())
         .unwrap_or_else(|| "main".into());
 

@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::path::Path;
 use std::process::Command;
 
 /// Try to get default "owner/repo" from git remote origin
@@ -14,8 +15,9 @@ impl Display for RepoInfo {
     }
 }
 
-pub(crate) fn default_repo_from_git() -> Option<RepoInfo> {
+pub(crate) fn default_repo_from_git(base_dir: &Path) -> Option<RepoInfo> {
     let output = Command::new("git")
+        .current_dir(base_dir)
         .args(["config", "--get", "remote.origin.url"])
         .output()
         .ok()?;
@@ -70,9 +72,10 @@ impl Display for RefInfo {
     }
 }
 
-pub fn default_ref_from_git() -> Option<RefInfo> {
+pub fn default_ref_from_git(base_dir: &Path) -> Option<RefInfo> {
     // Try to get branch name
     let output = Command::new("git")
+        .current_dir(base_dir)
         .args(["symbolic-ref", "--short", "HEAD"])
         .output()
         .ok()?;
@@ -86,6 +89,7 @@ pub fn default_ref_from_git() -> Option<RefInfo> {
 
     // If not on a branch (detached HEAD), fall back to commit SHA
     let output = Command::new("git")
+        .current_dir(base_dir)
         .args(["rev-parse", "HEAD"])
         .output()
         .ok()?;

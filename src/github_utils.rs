@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-pub fn default_workflow_from_dir() -> Option<String> {
-    let workflows_dir = Path::new(".github/workflows");
+pub fn default_workflow_from_dir(base_dir: &Path) -> Option<String> {
+    let workflows_dir = base_dir.join(".github/workflows");
     if !workflows_dir.exists() {
         return None;
     }
