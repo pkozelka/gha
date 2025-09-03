@@ -59,6 +59,9 @@ enum Commands {
     /// Generate Makefile clients for workflow_dispatch workflows
     #[clap(alias = "gen")]
     GenWorkflowClient {
+        /// Directory containing the workflow yml files
+        #[arg(short='d',long, default_value = ".")]
+        workflows_dir: PathBuf,
         /// Path to write the generated Makefile
         #[arg(short,long, default_value = "workflow_dispatch.Makefile")]
         output_file: PathBuf,
@@ -116,8 +119,8 @@ async fn main() -> anyhow::Result<()> {
             exitcode::OK
         }
 
-        Some(Commands::GenWorkflowClient { output_file }) => {
-            if let Err(e) = gen_client::generate_makefile(output_file) {
+        Some(Commands::GenWorkflowClient { workflows_dir, output_file }) => {
+            if let Err(e) = gen_client::generate_makefile(workflows_dir, output_file) {
                 error!("Failed to generate workflow client: {e:?}");
                 process::exit(exitcode::SOFTWARE);
             }

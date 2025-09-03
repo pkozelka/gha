@@ -81,22 +81,26 @@ struct InputInfo {
     description: Option<String>,
     required: bool,
     default: Option<String>,
-    r#type: Option<String>,
+    ui_type: Option<String>,
     options: Vec<String>,
 }
 
 /// Entry point: parse workflows, then write Makefile
-pub fn generate_makefile(output: &Path) -> Result<()> {
-    let workflows = discover_and_parse(".github/workflows")?;
+pub fn generate_makefile(workflows_dir: &Path, output: &Path) -> Result<()> {
+    if !workflows_dir.is_dir() {
+        anyhow::bail!("{} is not a directory or does not exist", workflows_dir.display());
+    }
+    let dir = workflows_dir.canonicalize()?;
+    tracing::info!("Discovering workflows in {}", dir.display());
+    let workflows = discover_and_parse(&dir)?;
     let content = render_makefile(&workflows)?;
     fs::write(output, content)
         .with_context(|| format!("failed to write {}", output.display()))
 }
 
 /// Discover YAML workflows and parse them
-fn discover_and_parse(dir: &str) -> Result<Vec<WorkflowInfo>> {
+fn discover_and_parse(path: &Path) -> Result<Vec<WorkflowInfo>> {
     let mut infos = Vec::new();
-    let path = Path::new(dir);
 
     if !path.is_dir() {
         return Ok(infos);
@@ -136,7 +140,7 @@ fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
             description: raw.description,
             required: raw.required && raw.default.is_none(),
             default: raw.default,
-            r#type: raw.r#type,
+            ui_type: raw.r#type,
             options: raw.options.unwrap_or_default(),
         })
         .collect();
@@ -160,18 +164,22 @@ fn render_makefile(workflows: &[WorkflowInfo]) -> Result<String> {
         .unwrap_or_else(|| "main".into());
 
     // Shared vars
-    buf.push_str("GITHUB_TOKEN ?=\n");
     buf.push_str(&format!("REPO ?={repo}\n"));
     buf.push_str(&format!("REF ?={reference}\n\n"));
+    buf.push_str("# Authentication\n");
+    buf.push_str("GITHUB_TOKEN ?=\n");
+    buf.push_str("CURL_AUTH ?=-H \"Authorization: Bearer $(GITHUB_TOKEN)\"\n");
+    buf.push_str("# or, in case you prefer ~/.netrc:\n");
+    buf.push_str("#CURL_AUTH=--netrc\n");
 
 
     // Macro: wraps the JSON envelope
-    buf.push_str("define WORKFLOW_DISPATCH\n");
-    buf.push_str("\tcurl -sSL -H \"Accept: application/vnd.github+json\" \\\n");
-    buf.push_str("\t-H \"Authorization: Bearer $(GITHUB_TOKEN)\" \\\n");
-    buf.push_str("\t-H \"X-GitHub-Api-Version: 2022-11-28\"\\\n");
-    buf.push_str("\thttps://api.github.com/repos/$(REPO)/actions/workflows/$1/dispatches \\\n");
-    buf.push_str("\t  -d '{\"ref\":\"$(REF)\",\"inputs\":{$2}}'\n");
+    buf.push_str("\ndefine WORKFLOW_DISPATCH\n");
+    buf.push_str("\tcurl -vSL 'https://api.github.com/repos/$(REPO)/actions/workflows/$1/dispatches' \\\n");
+    buf.push_str("\t$(CURL_AUTH) \\\n");
+    buf.push_str("\t-H \"X-GitHub-Api-Version: 2022-11-28\" \\\n");
+    buf.push_str("\t-H \"Accept: application/vnd.github+json\" \\\n");
+    buf.push_str("\t-d '{\"ref\":\"$(REF)\",\"inputs\":{$2}}'\n");
     buf.push_str("endef\n\n");
 
     buf.push_str("all:\n");
@@ -222,25 +230,9 @@ fn render_workflow(buf: &mut String, wf: &WorkflowInfo) -> Result<Vec<String>> {
 
     let mut targets = Vec::new();
 
-    // Comment header
-    buf.push_str(&format!("# Workflow: {}\n", wf.name));
-    for inp in &wf.inputs {
-        buf.push_str(&format!(
-            "#   {}: {}{}{}\n",
-            inp.name,
-            inp.description.as_deref().unwrap_or(""),
-            if inp.required { " (required)" } else { "" },
-            inp.default
-                .as_ref()
-                .map(|d| format!(" [default: {}]", d))
-                .unwrap_or_default(),
-        ));
-    }
-    buf.push('\n');
-
-    // If first input is a choice → generate per option
+    // If the first input is a choice → generate per option
     if let Some(first) = wf.inputs.first() {
-        if first.r#type.as_deref() == Some("choice") && !first.options.is_empty() {
+        if first.ui_type.as_deref() == Some("choice") && !first.options.is_empty() {
             for opt in &first.options {
                 let tname = format!("{}-{}", base_target, opt.to_lowercase().replace(':',"_"));
                 render_target(buf, &tname, wf, Some((&first.name, opt)))?;
@@ -264,11 +256,12 @@ fn render_target(
     choice: Option<(&String, &String)>,
 ) -> Result<()> {
     // Header
-    buf.push_str(&format!("# Workflow: {}\n", wf.name));
+    buf.push_str(&format!("##\n# {} ({})\n", wf.name, wf.file));
     for inp in &wf.inputs {
         buf.push_str(&format!(
-            "#   {}: {}{}{}\n",
-            inp.name,
+            "# - {}:{}\t {}{}{}\n",
+            inp.name.to_uppercase(),
+            inp.ui_type.as_deref().unwrap_or("STRING"),
             inp.description.as_deref().unwrap_or(""),
             if inp.required { " (required)" } else { "" },
             inp.default
