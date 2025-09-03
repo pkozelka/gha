@@ -175,8 +175,8 @@ fn render_makefile(base_dir: &Path, workflows: &[WorkflowInfo]) -> Result<String
         .unwrap_or_else(|| "main".into());
 
     // Shared vars
-    buf.push_str(&format!("REPO ?={repo}\n"));
-    buf.push_str(&format!("REF ?={reference}\n\n"));
+    buf.push_str(&format!("REPO ?= {repo}\n"));
+    buf.push_str(&format!("REF ?= {reference}\n\n"));
     buf.push_str("# Authentication\n");
     buf.push_str("GITHUB_TOKEN ?=\n");
     buf.push_str("CURL_AUTH ?=-H \"Authorization: Bearer $(GITHUB_TOKEN)\"\n");
@@ -193,15 +193,13 @@ fn render_makefile(base_dir: &Path, workflows: &[WorkflowInfo]) -> Result<String
     buf.push_str("\t-d '{\"ref\":\"$(REF)\",\"inputs\":{$2}}'\n");
     buf.push_str("endef\n\n");
 
-    buf.push_str("all:\n");
-
     let mut all_targets = Vec::new();
     for wf in workflows {
         let targets = render_workflow(&mut buf, wf)?;
         all_targets.extend(targets);
     }
 
-    buf.push_str(".PHONY: all ");
+    buf.push_str(".PHONY: ");
     for t in &all_targets {
         buf.push_str(t);
         buf.push(' ');
