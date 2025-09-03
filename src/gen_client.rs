@@ -17,6 +17,14 @@ struct WorkflowRaw {
 struct WorkflowOn {
     #[serde(rename = "workflow_dispatch", default)]
     workflow_dispatch: Option<WorkflowDispatch>,
+    #[serde(rename = "repository_dispatch", default)]
+    repository_dispatch: Option<RepositoryDispatch>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepositoryDispatch {
+    #[serde(default)]
+    types: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -127,6 +135,9 @@ fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
     let wf: WorkflowRaw = serde_yaml::from_str(&text)
         .with_context(|| format!("failed to parse {}", path.display()))?;
 
+    if let Some(d) = wf.on.repository_dispatch {
+        tracing::debug!("Ignoring repository_dispatch workflow: {} with types: {}", path.display(), d.types.join(","));
+    }
     let dispatch = match wf.on.workflow_dispatch {
         Some(d) => d,
         None => return Ok(None),
