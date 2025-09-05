@@ -26,6 +26,8 @@ dirs = "6.0.0"
 dotenvy = "0.15.7"
 serde_yaml = "0.9.34"
 
+handlebars = "5.1"
+
 [dev-dependencies]
 # CLI testing
 assert_cmd = "2"

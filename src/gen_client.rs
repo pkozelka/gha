@@ -101,7 +101,13 @@ pub fn generate_makefile(workflows_dir: &Path, output: &Path) -> Result<()> {
     let dir = workflows_dir.canonicalize()?;
     tracing::info!("Discovering workflows in {}", dir.display());
     let workflows = discover_and_parse(&dir)?;
-    let content = render_makefile(&dir, &workflows)?;
+
+    // Transform to rendering model
+    let model = build_render_model(&dir, &workflows)?;
+
+    // Render via template
+    let content = render_with_template(&model)?;
+
     fs::write(output, content)
         .with_context(|| format!("failed to write {}", output.display()))
 }
@@ -136,7 +142,7 @@ fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
         .with_context(|| format!("failed to parse {}", path.display()))?;
 
     if let Some(d) = wf.on.repository_dispatch {
-        tracing::debug!("Ignoring repository_dispatch workflow: {} with types: {}", path.display(), d.types.join(","));
+        tracing::warn!("Ignoring repository_dispatch workflow: {} with types: {}", path.display(), d.types.join(","));
     }
     let dispatch = match wf.on.workflow_dispatch {
         Some(d) => d,
@@ -162,51 +168,136 @@ fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
     Ok(Some(WorkflowInfo { file, name, inputs }))
 }
 
-/// Render full Makefile text from collected workflows
-fn render_makefile(base_dir: &Path, workflows: &[WorkflowInfo]) -> Result<String> {
-    let mut buf = String::new();
+// ... existing code ...
 
+use serde::Serialize;
+
+/// Rendering model (for template)
+#[derive(Serialize)]
+struct RenderModel {
+    repo: String,
+    reference: String,
+    workflows: Vec<RenderWorkflow>,
+    all_targets: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct RenderWorkflow {
+    name: String,
+    file: String,
+    targets: Vec<RenderTarget>,
+}
+
+#[derive(Serialize)]
+struct RenderTarget {
+    target: String,
+    comment_lines: Vec<String>,
+    required_vars: Vec<String>,
+    inputs_str: String,
+}
+
+/// Build the render model from parsed workflows and git defaults
+fn build_render_model(base_dir: &Path, workflows: &[WorkflowInfo]) -> Result<RenderModel> {
     // Defaults from git
     let repo = git_utils::default_repo_from_git(base_dir)
         .map(|r| format!("{}/{}", r.owner, r.repo))
         .unwrap_or_else(|| "<owner>/<repo>".into());
+
     let reference = git_utils::default_ref_from_git(base_dir)
         .map(|r| r.to_string())
         .unwrap_or_else(|| "main".into());
 
-    // Shared vars
-    buf.push_str(&format!("REPO ?= {repo}\n"));
-    buf.push_str(&format!("REF ?= {reference}\n\n"));
-    buf.push_str("# Authentication\n");
-    buf.push_str("GITHUB_TOKEN ?=\n");
-    buf.push_str("CURL_AUTH ?=-H \"Authorization: Bearer $(GITHUB_TOKEN)\"\n");
-    buf.push_str("# or, in case you prefer ~/.netrc:\n");
-    buf.push_str("#CURL_AUTH=--netrc\n");
-
-
-    // Macro: wraps the JSON envelope
-    buf.push_str("\ndefine WORKFLOW_DISPATCH\n");
-    buf.push_str("\tcurl -vSL 'https://api.github.com/repos/$(REPO)/actions/workflows/$1/dispatches' \\\n");
-    buf.push_str("\t$(CURL_AUTH) \\\n");
-    buf.push_str("\t-H \"X-GitHub-Api-Version: 2022-11-28\" \\\n");
-    buf.push_str("\t-H \"Accept: application/vnd.github+json\" \\\n");
-    buf.push_str("\t-d '{\"ref\":\"$(REF)\",\"inputs\":{$2}}'\n");
-    buf.push_str("endef\n\n");
-
+    let mut render_workflows = Vec::new();
     let mut all_targets = Vec::new();
+
     for wf in workflows {
-        let targets = render_workflow(&mut buf, wf)?;
-        all_targets.extend(targets);
+        // Join input names for info log
+        let input_names = wf
+            .inputs
+            .iter()
+            .map(|i| i.name.as_ref())
+            .collect::<Vec<_>>()
+            .join(", ");
+        tracing::info!("workflow_dispatch: {}({input_names})", wf.file);
+
+        let base_target = wf
+            .file
+            .trim_end_matches(".yml")
+            .trim_end_matches(".yaml")
+            .to_string();
+
+        let mut targets = Vec::new();
+
+        // If the first input is a choice → generate per option
+        if let Some(first) = wf.inputs.first() {
+            if first.ui_type.as_deref() == Some("choice") && !first.options.is_empty() {
+                for opt in &first.options {
+                    let tname = format!("{}-{}", base_target, opt.to_lowercase().replace(':', "_"));
+                    targets.push(build_render_target(&tname, wf, Some((&first.name, opt))));
+                }
+            } else {
+                targets.push(build_render_target(&base_target, wf, None));
+            }
+        } else {
+            // Workflow without inputs
+            targets.push(build_render_target(&base_target, wf, None));
+        }
+
+        all_targets.extend(targets.iter().map(|t| t.target.clone()));
+        render_workflows.push(RenderWorkflow {
+            name: wf.name.clone(),
+            file: wf.file.clone(),
+            targets,
+        });
     }
 
-    buf.push_str(".PHONY: ");
-    for t in &all_targets {
-        buf.push_str(t);
-        buf.push(' ');
-    }
-    buf.push('\n');
+    Ok(RenderModel {
+        repo,
+        reference,
+        workflows: render_workflows,
+        all_targets,
+    })
+}
 
-    Ok(buf)
+fn build_render_target(
+    target: &str,
+    wf: &WorkflowInfo,
+    choice: Option<(&String, &String)>,
+) -> RenderTarget {
+    // Header comment lines
+    let mut comment_lines = Vec::new();
+    comment_lines.push(format!("{} ({})", wf.name, wf.file));
+    for inp in &wf.inputs {
+        comment_lines.push(format!(
+            "- {}:{}\t {}{}{}",
+            inp.name.to_uppercase(),
+            inp.ui_type.as_deref().unwrap_or("STRING"),
+            inp.description.as_deref().unwrap_or(""),
+            if inp.required { " (required)" } else { "" },
+            inp.default
+                .as_ref()
+                .map(|d| format!(" [default: {}]", d))
+                .unwrap_or_default(),
+        ));
+    }
+
+    // Required variables for checks
+    let mut required_vars = Vec::new();
+    for inp in &wf.inputs {
+        if inp.required {
+            required_vars.push(inp.name.to_uppercase());
+        }
+    }
+
+    // Inputs JSON string
+    let inputs_str = make_inputs(wf.inputs.as_slice(), choice);
+
+    RenderTarget {
+        target: target.to_string(),
+        comment_lines,
+        required_vars,
+        inputs_str,
+    }
 }
 
 /// Build only the `inputs` JSON fragment
@@ -226,73 +317,17 @@ fn make_inputs(inputs: &[InputInfo], choice: Option<(&String, &String)>) -> Stri
 
     parts.join(",")
 }
-/// Render a single workflow block, returning all target names
-fn render_workflow(buf: &mut String, wf: &WorkflowInfo) -> Result<Vec<String>> {
-    // join input names into one string, comma separated
-    let input_names = wf.inputs.iter().map(|i| i.name.as_ref()).collect::<Vec<_>>().join(", ");
-    tracing::info!("workflow_dispatch: {}({input_names})", wf.file );
-    let base_target = wf
-        .file
-        .trim_end_matches(".yml")
-        .trim_end_matches(".yaml")
-        .to_string();
 
-    let mut targets = Vec::new();
+// Handlebars template for the Makefile
+const MAKEFILE_TEMPLATE: &str = include_str!("template.Makefile");
 
-    // If the first input is a choice → generate per option
-    if let Some(first) = wf.inputs.first() {
-        if first.ui_type.as_deref() == Some("choice") && !first.options.is_empty() {
-            for opt in &first.options {
-                let tname = format!("{}-{}", base_target, opt.to_lowercase().replace(':',"_"));
-                render_target(buf, &tname, wf, Some((&first.name, opt)))?;
-                targets.push(tname);
-            }
-            return Ok(targets);
-        }
-    }
-
-    // Default: single target
-    render_target(buf, &base_target, wf, None)?;
-    targets.push(base_target);
-    Ok(targets)
-}
-
-/// Render one target
-fn render_target(
-    buf: &mut String,
-    target: &str,
-    wf: &WorkflowInfo,
-    choice: Option<(&String, &String)>,
-) -> Result<()> {
-    // Header
-    buf.push_str(&format!("##\n# {} ({})\n", wf.name, wf.file));
-    for inp in &wf.inputs {
-        buf.push_str(&format!(
-            "# - {}:{}\t {}{}{}\n",
-            inp.name.to_uppercase(),
-            inp.ui_type.as_deref().unwrap_or("STRING"),
-            inp.description.as_deref().unwrap_or(""),
-            if inp.required { " (required)" } else { "" },
-            inp.default
-                .as_ref()
-                .map(|d| format!(" [default: {}]", d))
-                .unwrap_or_default(),
-        ));
-    }
-
-    buf.push_str(&format!("{target}:\n"));
-
-    // Required checks inline with comment
-    for inp in &wf.inputs {
-        if inp.required {
-            let var = inp.name.to_uppercase();
-            buf.push_str(&format!("\ttest -n \"$({var})\" # requires: {var}\n"));
-        }
-    }
-
-    // Payload inputs only
-    let inputs_str = make_inputs(wf.inputs.as_slice(), choice);
-    buf.push_str(&format!("\t$(call WORKFLOW_DISPATCH,{},{})\n\n", wf.file, inputs_str));
-
-    Ok(())
+/// Render model using the template (Handlebars)
+fn render_with_template(model: &RenderModel) -> Result<String> {
+    let mut handlebars = handlebars::Handlebars::new();
+    // Makefile should not HTML-escape content
+    handlebars.register_escape_fn(handlebars::no_escape);
+    let out = handlebars
+        .render_template(MAKEFILE_TEMPLATE, model)
+        .context("failed to render Makefile template")?;
+    Ok(out)
 }
