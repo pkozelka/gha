@@ -315,10 +315,10 @@ fn make_inputs(inputs: &[InputInfo], choice: Option<(&String, &String)>) -> Stri
         parts.push(format!("\"{}\":\"$({})\"", inp.name, var));
     }
 
-    parts.join(",")
+    parts.join("++|++")
 }
 
-// Handlebars template for the Makefile
+/// Handlebars template for the Makefile
 const MAKEFILE_TEMPLATE: &str = include_str!("template.Makefile");
 
 /// Render model using the template (Handlebars)
