@@ -8,11 +8,11 @@ CURL_AUTH ?=-H "Authorization: Bearer $(GITHUB_TOKEN)"
 #CURL_AUTH=--netrc
 GITHUB_CURL=curl --fail -sSL $(CURL_AUTH) -H "X-GitHub-Api-Version: 2022-11-28" -H "Accept: application/vnd.github+json"
 RUNNER_TEMP ?= /tmp
-JOB_DIR := $(shell date +'$(RUNNER_TEMP)/ghwd-%m%d-%H%M%S')
+JOB_DIR := $(shell date +'$(RUNNER_TEMP)/.gha-%m%d-%H%M%S-%N')
 
 __COMMA__ := ,
 __REPO__ := $(subst /,_,$(REPO))
-__GHA_RECENT__ := $(RUNNER_TEMP)/.gha-recent.$(__REPO__).txt
+__GHA_RECENT__ := $(RUNNER_TEMP)/.gha-recent-$(USER).$(__REPO__).txt
 
 define WORKFLOW_DISPATCH
 	mkdir -p "$(JOB_DIR)"
@@ -68,9 +68,11 @@ _wait-for-schedule:
 			sleep 1; \
 			$(GITHUB_CURL) "`cat $(JOB_DIR)/runs.url`" > $(JOB_DIR)/runs.json; \
 		done; \
+		echo; \
 		jq -e -r '.workflow_runs | sort_by(.run_started_at)[0]' "$(JOB_DIR)/runs.json" > "$(JOB_DIR)/run.json"; \
 	fi
-	@jq -e -r '"Scheduled: \(.url)"' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/run.url"
+	@printf "Scheduled: "
+	@jq -e -r '.url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/run.url"
 	@jq -e -r '"GitHub UI: \(.html_url)"' "$(JOB_DIR)/run.json"
 
 _wait-for-completion:
