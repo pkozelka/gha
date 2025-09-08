@@ -99,7 +99,7 @@ await: _wait-for-schedule _wait-for-completion _download_logs _download_artifact
 
 await-all:
 	cat "$(__GHA_RECENT__)" | while read -r DIR; do \
-	  $(MAKE) await JOB_DIR="$$DIR"; \
+	  $(MAKE) -f $(firstword $(MAKEFILE_LIST)) await JOB_DIR="$$DIR"; \
 	done
 
 clean:

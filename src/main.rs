@@ -63,7 +63,7 @@ enum Commands {
     #[clap(alias = "gen")]
     GenWorkflowClient {
         /// Directory containing the workflow yml files
-        #[arg(short='d',long, default_value = ".")]
+        #[arg(short='d',long, default_value = ".github/workflows")]
         workflows_dir: PathBuf,
         /// Path to write the generated Makefile
         #[arg(short,long, default_value = "workflow_dispatch.Makefile")]

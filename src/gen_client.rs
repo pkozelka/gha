@@ -131,6 +131,7 @@ fn discover_and_parse(path: &Path) -> Result<Vec<WorkflowInfo>> {
             }
         }
     }
+    tracing::info!("Found {} workflow files in {}", infos.len(), path.display());
 
     Ok(infos)
 }
@@ -142,6 +143,7 @@ fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
         .with_context(|| format!("failed to parse {}", path.display()))?;
 
     if let Some(d) = wf.on.repository_dispatch {
+        // TODO maybe let's generate client, too - repository_dispatch-EVENTNAME with CLIENT_PAYLOAD input
         tracing::warn!("Ignoring repository_dispatch workflow: {} with types: {}", path.display(), d.types.join(","));
     }
     let dispatch = match wf.on.workflow_dispatch {
