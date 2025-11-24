@@ -278,7 +278,11 @@ fn build_render_target(
             if inp.required { " (required)" } else { "" },
             inp.default
                 .as_ref()
-                .map(|d| format!(" [default: {}]", d))
+                .map(|d| format!(" [default: {}]", if d.len() < 256 {
+                    d.to_string()
+                } else {
+                    format!("(long default: {} bytes)", d.len())
+                }))
                 .unwrap_or_default(),
         ));
     }
