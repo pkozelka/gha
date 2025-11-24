@@ -76,6 +76,7 @@ _wait-for-schedule:
 	@jq -e -r '"GitHub UI: \(.html_url)"' "$(JOB_DIR)/run.json"
 
 _wait-for-completion:
+	@jq -e -r '.cancel_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/cancel.url"
 	@while jq -e -r '.status' "$(JOB_DIR)/run.json" > "$(JOB_DIR)/status.txt"; do \
 		STATUS=`cat $(JOB_DIR)/status.txt`; \
 		echo "`date -u -Iseconds` $$STATUS"; \
@@ -89,12 +90,23 @@ _wait-for-completion:
 	@jq -e -r '.conclusion' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/conclusion.txt"
 
 _download_logs:
-	#TODO Download logs
+	# Downloading logs
+	@jq -e -r '.logs_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/logs.url"
+	$(GITHUB_CURL) "`cat $(JOB_DIR)/logs.url`" > $(JOB_DIR)/logs.zip
+	mkdir -p "$(JOB_DIR)/logs"
+	cd "$(JOB_DIR)/logs" && unzip ../logs.zip
 
 _download_artifacts:
-	#TODO Download artifacts
+	# Downloading artifacts
+	@jq -e -r '.artifacts_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/artifacts.url"
+	$(GITHUB_CURL) "`cat $(JOB_DIR)/artifacts.url`" > $(JOB_DIR)/artifacts.json
 
-await: _wait-for-schedule _wait-for-completion _download_logs _download_artifacts
+_download_jobs:
+	# Downloading jobs
+	@jq -e -r '.jobs_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/jobs.url"
+	$(GITHUB_CURL) "`cat $(JOB_DIR)/jobs.url`" > $(JOB_DIR)/jobs.json
+
+await: _wait-for-schedule _wait-for-completion _download_logs _download_artifacts _download_jobs
 	test $(shell cat "$(JOB_DIR)/conclusion.txt") == "success"
 
 await-all:
@@ -104,7 +116,7 @@ await-all:
 
 clean:
 	cp "$(__GHA_RECENT__)" "$(__GHA_RECENT__).bak"
-	cat "$(__GHA_RECENT__)" | while read -r DIR; do \
+	cat "$(__GHA_RECENT__).bak" | while read -r DIR; do \
 	  rm -rfv "$$DIR"; \
 	  sed -i -e '1d' "$(__GHA_RECENT__)"; \
 	done
