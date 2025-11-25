@@ -100,7 +100,7 @@ _download_artifacts:
 	# Downloading artifacts
 	@jq -e -r '.artifacts_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/artifacts.url"
 	$(GITHUB_CURL) "`cat $(JOB_DIR)/artifacts.url`" > $(JOB_DIR)/artifacts.json
-	cat $(JOB_DIR)/artifacts.json \
+	@cat $(JOB_DIR)/artifacts.json \
 	| jq -r '.artifacts[] | .name+" "+.archive_download_url' \
 	| while read artifact_name archive_download_url _r; do \
 		mkdir -p $(JOB_DIR)/artifacts; \
@@ -113,7 +113,11 @@ _download_jobs:
 	@jq -e -r '.jobs_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/jobs.url"
 	$(GITHUB_CURL) "`cat $(JOB_DIR)/jobs.url`" > $(JOB_DIR)/jobs.json
 
-await: _wait-for-schedule _wait-for-completion _download_logs _download_artifacts _download_jobs
+await: _wait-for-schedule _wait-for-completion _download_logs _download_artifacts _download_jobs _eval
+_eval:
+	# GHA_EXPORT: $(JOB_DIR)/GHA_EXPORT.env
+	@sed -n '/ GHA_EXPORT: /{s#^.* GHA_EXPORT: ##;p;}' $(JOB_DIR)/logs/*.txt | tee $(JOB_DIR)/GHA_EXPORT.env
+	#
 	test $(shell cat "$(JOB_DIR)/conclusion.txt") == "success" # see $(JOB_DIR)/
 
 await-all:
