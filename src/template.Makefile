@@ -1,3 +1,4 @@
+-include .env
 REPO ?= {{repo}}
 REF ?= {{reference}}
 
