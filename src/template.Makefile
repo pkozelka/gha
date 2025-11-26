@@ -73,11 +73,11 @@ _wait-for-schedule:
 		jq -e -r '.workflow_runs | sort_by(.run_started_at)[0]' "$(JOB_DIR)/runs.json" > "$(JOB_DIR)/run.json"; \
 	fi
 	@printf "Scheduled: "
+	@jq -e -r '.cancel_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/cancel.url"
 	@jq -e -r '.url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/run.url"
 	@jq -e -r '"GitHub UI: \(.html_url)"' "$(JOB_DIR)/run.json"
 
 _wait-for-completion:
-	@jq -e -r '.cancel_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/cancel.url"
 	@while jq -e -r '.status' "$(JOB_DIR)/run.json" > "$(JOB_DIR)/status.txt"; do \
 		STATUS=`cat $(JOB_DIR)/status.txt`; \
 		echo "`date -u -Iseconds` $$STATUS"; \
@@ -116,6 +116,7 @@ _download_jobs:
 
 await: _wait-for-schedule _wait-for-completion _download_logs _download_artifacts _download_jobs _eval
 _eval:
+	@cat $(JOB_DIR)/jobs.json | jq '[.jobs[] | select(.conclusion == "failure") | {job_id: .id, job_name: .name, html_url: .html_url, failed_steps: [.steps[] | select(.conclusion == "failure") | {step_name: .name, conclusion: .conclusion}]}]'
 	# GHA_EXPORT: $(JOB_DIR)/GHA_EXPORT.env
 	@sed -n '/ GHA_EXPORT: /{s#^.* GHA_EXPORT: ##;p;}' $(JOB_DIR)/logs/*.txt | tee $(JOB_DIR)/GHA_EXPORT.env
 	#
