@@ -72,8 +72,9 @@ _wait-for-schedule:
 		echo; \
 		jq -e -r '.workflow_runs | sort_by(.run_started_at)[0]' "$(JOB_DIR)/runs.json" > "$(JOB_DIR)/run.json"; \
 	fi
-	@printf "Scheduled: "
+	@printf "Cancel:    "
 	@jq -e -r '.cancel_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/cancel.url"
+	@printf "Scheduled: "
 	@jq -e -r '.url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/run.url"
 	@jq -e -r '"GitHub UI: \(.html_url)"' "$(JOB_DIR)/run.json"
 
