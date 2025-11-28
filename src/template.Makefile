@@ -3,10 +3,13 @@ REPO ?= {{repo}}
 REF ?= {{reference}}
 
 # Authentication
-GITHUB_TOKEN ?=
-CURL_AUTH ?=-H "Authorization: Bearer $(GITHUB_TOKEN)"
-# or, in case you prefer ~/.netrc:
-#CURL_AUTH=--netrc
+ifdef GITHUB_TOKEN
+CURL_AUTH=-H "Authorization: Bearer $(GITHUB_TOKEN)"
+else
+# set the token in ~/.netrc:
+# machine api.github.com login anyone password ghp_XXXXX
+CURL_AUTH=--netrc
+endif
 GITHUB_CURL=curl --fail -sSL $(CURL_AUTH) -H "X-GitHub-Api-Version: 2022-11-28" -H "Accept: application/vnd.github+json"
 RUNNER_TEMP ?= /tmp
 JOB_DIR := $(shell date +'$(RUNNER_TEMP)/.gha-%m%d-%H%M%S-%N')
@@ -17,7 +20,7 @@ __GHA_RECENT__ := $(RUNNER_TEMP)/.gha-recent-$(USER).$(__REPO__).txt
 
 define WORKFLOW_DISPATCH
 	mkdir -p "$(JOB_DIR)"
-	echo "$(JOB_DIR)" >> $(__GHA_RECENT__)
+	printf "$(JOB_DIR)\t$1\n" >> $(__GHA_RECENT__)
 	echo '{"ref":"$(REF)","inputs":{$(subst ++|++,$(__COMMA__),$2)}}' > $(JOB_DIR)/init-request.json
 	echo '$1' > $(JOB_DIR)/workflow.txt
 	$(GITHUB_CURL) 'https://api.github.com/repos/$(REPO)/actions/workflows/$1/dispatches' \
@@ -77,11 +80,14 @@ _wait-for-schedule:
 	@printf "Scheduled: "
 	@jq -e -r '.url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/run.url"
 	@jq -e -r '"GitHub UI: \(.html_url)"' "$(JOB_DIR)/run.json"
+	@jq -e -r '.jobs_url' "$(JOB_DIR)/run.json" > "$(JOB_DIR)/jobs.url"
 
 _wait-for-completion:
 	@while jq -e -r '.status' "$(JOB_DIR)/run.json" > "$(JOB_DIR)/status.txt"; do \
+		$(GITHUB_CURL) "`cat $(JOB_DIR)/jobs.url`" > $(JOB_DIR)/jobs.json; \
 		STATUS=`cat $(JOB_DIR)/status.txt`; \
-		echo "`date -u -Iseconds` $$STATUS"; \
+		printf "`date -u -Iseconds` $$STATUS "; \
+		cat $(JOB_DIR)/jobs.json | jq -r '[.jobs[] | select(.status=="in_progress") | .name as $$job | .steps[]? | select(.status=="in_progress") | "\($$job)::\(.name)"] | join(", ")'; \
 		[ "$$STATUS" == "completed" ] && break; \
 		sleep 5; \
 		[ "$$STATUS" == "queued" ] && sleep 10; \
@@ -110,13 +116,9 @@ _download_artifacts:
 		unzip -o "$(JOB_DIR)/artifacts/$${artifact_name}.zip" -d "$(JOB_DIR)/artifacts/$${artifact_name}"; \
 	  done
 
-_download_jobs:
-	# Downloading jobs
-	@jq -e -r '.jobs_url' "$(JOB_DIR)/run.json" | tee "$(JOB_DIR)/jobs.url"
-	$(GITHUB_CURL) "`cat $(JOB_DIR)/jobs.url`" > $(JOB_DIR)/jobs.json
-
-await: _wait-for-schedule _wait-for-completion _download_logs _download_artifacts _download_jobs _eval
+await: _wait-for-schedule _wait-for-completion _download_logs _download_artifacts _eval
 _eval:
+	@$(GITHUB_CURL) "`cat $(JOB_DIR)/jobs.url`" > $(JOB_DIR)/jobs.json
 	@cat $(JOB_DIR)/jobs.json | jq '[.jobs[] | select(.conclusion == "failure") | {job_id: .id, job_name: .name, html_url: .html_url, failed_steps: [.steps[] | select(.conclusion == "failure") | {step_name: .name, conclusion: .conclusion}]}]'
 	# GHA_EXPORT: $(JOB_DIR)/GHA_EXPORT.env
 	@sed -n '/ GHA_EXPORT: /{s#^.* GHA_EXPORT: ##;p;}' $(JOB_DIR)/logs/*.txt | tee $(JOB_DIR)/GHA_EXPORT.env
