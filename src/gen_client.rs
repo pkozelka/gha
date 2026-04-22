@@ -1,96 +1,25 @@
 use crate::git_utils;
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use yaml_rust2::YamlLoader;
 use std::{
     fs,
     path::Path,
 };
 
-#[derive(Debug, Deserialize)]
-struct WorkflowRaw {
-    name: Option<String>,
-    #[serde(default)]
-    on: WorkflowOn,
-}
-
-#[derive(Debug, Deserialize, Default)]
-struct WorkflowOn {
-    #[serde(rename = "workflow_dispatch", default)]
-    workflow_dispatch: Option<WorkflowDispatch>,
-    #[serde(rename = "repository_dispatch", default)]
-    repository_dispatch: Option<RepositoryDispatch>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RepositoryDispatch {
-    #[serde(default)]
-    types: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WorkflowDispatch {
-    #[serde(default, deserialize_with = "deserialize_ordered_inputs")]
-    inputs: Vec<(String, WorkflowInput)>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WorkflowInput {
-    description: Option<String>,
-    #[serde(default)]
-    required: bool,
-    #[serde(default)]
-    default: Option<String>,
-    #[serde(rename = "type", default)]
-    r#type: Option<String>, // e.g. "choice"
-    #[serde(default)]
-    options: Option<Vec<String>>,
-}
-
-// Custom deserializer to preserve mapping order for `inputs`
-fn deserialize_ordered_inputs<'de, D>(
-    deserializer: D,
-) -> Result<Vec<(String, WorkflowInput)>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    struct OrderedVisitor;
-
-    impl<'de> serde::de::Visitor<'de> for OrderedVisitor {
-        type Value = Vec<(String, WorkflowInput)>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("a mapping of inputs preserving order")
-        }
-
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: serde::de::MapAccess<'de>,
-        {
-            let mut vec = Vec::new();
-            while let Some((k, v)) = map.next_entry::<String, WorkflowInput>()? {
-                vec.push((k, v));
-            }
-            Ok(vec)
-        }
-    }
-
-    deserializer.deserialize_map(OrderedVisitor)
-}
-
 /// Normalized workflow info
-struct WorkflowInfo {
+pub struct WorkflowInfo {
     pub file: String,
     pub name: String,
-    inputs: Vec<InputInfo>,
+    pub inputs: Vec<InputInfo>,
 }
 
-struct InputInfo {
-    name: String,
-    description: Option<String>,
-    required: bool,
-    default: Option<String>,
-    ui_type: Option<String>,
-    options: Vec<String>,
+pub struct InputInfo {
+    pub name: String,
+    pub description: Option<String>,
+    pub required: bool,
+    pub default: Option<String>,
+    pub ui_type: Option<String>,
+    pub options: Vec<String>,
 }
 
 /// Entry point: parse workflows, then write Makefile
@@ -137,41 +66,90 @@ fn discover_and_parse(path: &Path) -> Result<Vec<WorkflowInfo>> {
 }
 
 /// Parse a workflow into WorkflowInfo
-fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
+pub fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
     let yaml = fs::read_to_string(path)?;
-    let wf: WorkflowRaw = serde_yaml::from_str(&yaml)
+    let docs = YamlLoader::load_from_str(&yaml)
         .with_context(|| format!("failed to parse {}", path.display()))?;
-
-    if let Some(d) = &wf.on.repository_dispatch {
-        // TODO maybe let's generate client, too - repository_dispatch-EVENTNAME with CLIENT_PAYLOAD input
-        tracing::warn!("Ignoring repository_dispatch workflow: {} with types: {}", path.display(), d.types.join(","));
+    
+    if docs.is_empty() {
+        return Ok(None);
     }
-    let dispatch = match wf.on.workflow_dispatch {
-        Some(d) => d,
-        None => {
-            tracing::debug!("NONE; YAML={yaml}");
-            tracing::debug!("ON: {:?}", wf.on);
-            return Ok(None)
-        },
-    };
+    let doc = &docs[0];
 
-    let inputs = dispatch
-        .inputs
-        .into_iter()
-        .map(|(name, raw)| InputInfo {
-            name,
-            description: raw.description,
-            required: raw.required && raw.default.is_none(),
-            default: raw.default,
-            ui_type: raw.r#type,
-            options: raw.options.unwrap_or_default(),
-        })
-        .collect();
+    let on = &doc["on"];
+    let workflow_dispatch = &on["workflow_dispatch"];
+    let repository_dispatch = &on["repository_dispatch"];
+
+    if !repository_dispatch.is_badvalue() {
+        let types = repository_dispatch["types"]
+            .as_vec()
+            .map(|v| {
+                v.iter()
+                    .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        
+        tracing::warn!("Ignoring repository_dispatch workflow: {} with types: {}", path.display(), types.join(","));
+    }
+
+    if workflow_dispatch.is_badvalue() {
+        tracing::debug!("NONE; YAML={yaml}");
+        tracing::debug!("ON: {:?}", on);
+        return Ok(None);
+    }
+
+    let mut inputs = Vec::new();
+    if let Some(inputs_hash) = workflow_dispatch["inputs"].as_hash() {
+        for (k, v) in inputs_hash {
+            if let Some(name) = k.as_str() {
+                let description = v["description"].as_str().map(|s| s.to_string());
+                let required = v["required"].as_bool().unwrap_or(false);
+                let default = v["default"].as_str().map(|s| s.to_string());
+                let ui_type = v["type"].as_str().map(|s| s.to_string());
+                let options = v["options"]
+                    .as_vec()
+                    .map(|vec| {
+                        vec.iter()
+                            .filter_map(|opt| opt.as_str().map(|s| s.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+
+                // Logic from original code: required is true only if explicitly true AND no default
+                let is_required = required && default.is_none();
+
+                inputs.push(InputInfo {
+                    name: name.to_string(),
+                    description,
+                    required: is_required,
+                    default,
+                    ui_type,
+                    options,
+                });
+            }
+        }
+    }
 
     let file = path.file_name().unwrap().to_string_lossy().to_string();
-    let name = wf.name.unwrap_or_else(|| file.clone());
+    let name = doc["name"].as_str().map(|s| s.to_string()).unwrap_or_else(|| file.clone());
 
     Ok(Some(WorkflowInfo { file, name, inputs }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_parse_workflow_dispatch_and_push() {
+        let path = Path::new("tests/empty.yml");
+        let result = parse_workflow(&path).unwrap();
+        assert!(result.is_some(), "Workflow should be parsed when workflow_dispatch is present");
+        let wf = result.unwrap();
+        assert_eq!(wf.file, "empty.yml");
+    }
 }
 
 // ... existing code ...

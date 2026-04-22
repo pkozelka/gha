@@ -113,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
         _ => "trace",
     };
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(log_level)
         .init();
 
@@ -184,12 +185,12 @@ async fn main() -> anyhow::Result<()> {
         }
 
         None => {
-            error!("No command provided. Showing help:");
-
-            // Print help to stdout
             let mut cmd = Cli::command();
-            cmd.print_help().unwrap();
-            println!(); // newline after help
+            let mut buf = Vec::new();
+            cmd.write_help(&mut buf).unwrap();
+            let help_text = String::from_utf8_lossy(&buf);
+            
+            error!("No command provided. Showing help:\n{}", help_text);
 
             exitcode::USAGE
         }
