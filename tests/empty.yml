@@ -1,0 +1,19 @@
+name: Build & Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: "deadly-vipers"
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v6
+
