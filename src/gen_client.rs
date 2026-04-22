@@ -138,17 +138,21 @@ fn discover_and_parse(path: &Path) -> Result<Vec<WorkflowInfo>> {
 
 /// Parse a workflow into WorkflowInfo
 fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
-    let text = fs::read_to_string(path)?;
-    let wf: WorkflowRaw = serde_yaml::from_str(&text)
+    let yaml = fs::read_to_string(path)?;
+    let wf: WorkflowRaw = serde_yaml::from_str(&yaml)
         .with_context(|| format!("failed to parse {}", path.display()))?;
 
-    if let Some(d) = wf.on.repository_dispatch {
+    if let Some(d) = &wf.on.repository_dispatch {
         // TODO maybe let's generate client, too - repository_dispatch-EVENTNAME with CLIENT_PAYLOAD input
         tracing::warn!("Ignoring repository_dispatch workflow: {} with types: {}", path.display(), d.types.join(","));
     }
     let dispatch = match wf.on.workflow_dispatch {
         Some(d) => d,
-        None => return Ok(None),
+        None => {
+            tracing::debug!("NONE; YAML={yaml}");
+            tracing::debug!("ON: {:?}", wf.on);
+            return Ok(None)
+        },
     };
 
     let inputs = dispatch
