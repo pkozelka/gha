@@ -1,6 +1,5 @@
 use crate::git_utils;
 use anyhow::{Context, Result};
-use yaml_rust2::YamlLoader;
 use std::{
     fs,
     path::Path,
@@ -68,71 +67,72 @@ fn discover_and_parse(path: &Path) -> Result<Vec<WorkflowInfo>> {
 /// Parse a workflow into WorkflowInfo
 pub fn parse_workflow(path: &Path) -> Result<Option<WorkflowInfo>> {
     let yaml = fs::read_to_string(path)?;
-    let docs = YamlLoader::load_from_str(&yaml)
+    let value: serde_json::Value = serde_yml::from_str(&yaml)
         .with_context(|| format!("failed to parse {}", path.display()))?;
-    
-    if docs.is_empty() {
+
+    let on = value.get("on");
+    if on.is_none() {
         return Ok(None);
     }
-    let doc = &docs[0];
+    let on = on.unwrap();
 
-    let on = &doc["on"];
-    let workflow_dispatch = &on["workflow_dispatch"];
-    let repository_dispatch = &on["repository_dispatch"];
+    let workflow_dispatch = on.get("workflow_dispatch");
+    let repository_dispatch = on.get("repository_dispatch");
 
-    if !repository_dispatch.is_badvalue() {
-        let types = repository_dispatch["types"]
-            .as_vec()
-            .map(|v| {
-                v.iter()
-                    .filter_map(|t| t.as_str().map(|s| s.to_string()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        
-        tracing::warn!("Ignoring repository_dispatch workflow: {} with types: {}", path.display(), types.join(","));
+    if let Some(repository_dispatch) = repository_dispatch {
+        if !repository_dispatch.is_null() {
+            let types = repository_dispatch.get("types")
+                .and_then(|t| t.as_array())
+                .map(|v| {
+                    v.iter()
+                        .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+
+            tracing::warn!("Ignoring repository_dispatch workflow: {} with types: {}", path.display(), types.join(","));
+        }
     }
 
-    if workflow_dispatch.is_badvalue() {
+    if workflow_dispatch.is_none() {
         tracing::debug!("NONE; YAML={yaml}");
         tracing::debug!("ON: {:?}", on);
         return Ok(None);
     }
+    let workflow_dispatch = workflow_dispatch.unwrap();
 
     let mut inputs = Vec::new();
-    if let Some(inputs_hash) = workflow_dispatch["inputs"].as_hash() {
-        for (k, v) in inputs_hash {
-            if let Some(name) = k.as_str() {
-                let description = v["description"].as_str().map(|s| s.to_string());
-                let required = v["required"].as_bool().unwrap_or(false);
-                let default = v["default"].as_str().map(|s| s.to_string());
-                let ui_type = v["type"].as_str().map(|s| s.to_string());
-                let options = v["options"]
-                    .as_vec()
-                    .map(|vec| {
-                        vec.iter()
-                            .filter_map(|opt| opt.as_str().map(|s| s.to_string()))
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
+    if let Some(inputs_hash) = workflow_dispatch.get("inputs").and_then(|i| i.as_object()) {
+        for (name, v) in inputs_hash {
+            let description = v.get("description").and_then(|s| s.as_str()).map(|s| s.to_string());
+            let required = v.get("required").and_then(|s| s.as_bool()).unwrap_or(false);
+            let default = v.get("default").and_then(|s| s.as_str()).map(|s| s.to_string());
+            let ui_type = v.get("type").and_then(|s| s.as_str()).map(|s| s.to_string());
+            let options = v.get("options")
+                .and_then(|v| v.as_array())
+                .map(|vec| {
+                    vec.iter()
+                        .filter_map(|opt| opt.as_str().map(|s| s.to_string()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
 
-                // Logic from original code: required is true only if explicitly true AND no default
-                let is_required = required && default.is_none();
+            // Logic from original code: required is true only if explicitly true AND no default
+            let is_required = required && default.is_none();
 
-                inputs.push(InputInfo {
-                    name: name.to_string(),
-                    description,
-                    required: is_required,
-                    default,
-                    ui_type,
-                    options,
-                });
-            }
+            inputs.push(InputInfo {
+                name: name.to_string(),
+                description,
+                required: is_required,
+                default,
+                ui_type,
+                options,
+            });
         }
     }
 
     let file = path.file_name().unwrap().to_string_lossy().to_string();
-    let name = doc["name"].as_str().map(|s| s.to_string()).unwrap_or_else(|| file.clone());
+    let name = value.get("name").and_then(|s| s.as_str()).map(|s| s.to_string()).unwrap_or_else(|| file.clone());
 
     Ok(Some(WorkflowInfo { file, name, inputs }))
 }

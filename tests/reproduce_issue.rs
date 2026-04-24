@@ -1,49 +1,37 @@
-use yaml_rust2::YamlLoader;
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn test_workflow_dispatch_empty() {
+    fn test_serde_yml_null() {
         let yaml = "workflow_dispatch:";
-        let docs = YamlLoader::load_from_str(yaml).unwrap();
-        let doc = &docs[0];
-        let workflow_dispatch = &doc["workflow_dispatch"];
-        println!("Parsed: {:?}", workflow_dispatch);
-        assert!(!workflow_dispatch.is_badvalue(), "workflow_dispatch should not be BadValue even if empty in YAML");
-        assert!(workflow_dispatch.is_null());
+        let value: serde_json::Value = serde_yml::from_str(yaml).unwrap();
+        println!("Parsed serde_yml: {:?}", value);
+        assert!(value.get("workflow_dispatch").is_some());
+        assert!(value.get("workflow_dispatch").unwrap().is_null());
     }
 
     #[test]
-    fn test_workflow_dispatch_null() {
+    fn test_serde_yml_explicit_null() {
         let yaml = "workflow_dispatch: null";
-        let docs = YamlLoader::load_from_str(yaml).unwrap();
-        let doc = &docs[0];
-        let workflow_dispatch = &doc["workflow_dispatch"];
-        println!("Parsed: {:?}", workflow_dispatch);
-        assert!(!workflow_dispatch.is_badvalue(), "workflow_dispatch should not be BadValue if it is explicitly null");
-        assert!(workflow_dispatch.is_null());
+        let value: serde_json::Value = serde_yml::from_str(yaml).unwrap();
+        println!("Parsed serde_yml explicit: {:?}", value);
+        assert!(value.get("workflow_dispatch").unwrap().is_null());
     }
 
     #[test]
-    fn test_workflow_dispatch_with_content() {
-        let yaml = "workflow_dispatch:\n  inputs:\n    foo: bar";
-        let docs = YamlLoader::load_from_str(yaml).unwrap();
-        let doc = &docs[0];
-        let workflow_dispatch = &doc["workflow_dispatch"];
-        println!("Parsed: {:?}", workflow_dispatch);
-        assert!(!workflow_dispatch.is_badvalue());
-        assert!(!workflow_dispatch["inputs"].is_badvalue());
-    }
-
-    #[test]
-    fn test_workflow_dispatch_missing() {
-        let yaml = "other: value";
-        let docs = YamlLoader::load_from_str(yaml).unwrap();
-        let doc = &docs[0];
-        let workflow_dispatch = &doc["workflow_dispatch"];
-        println!("Parsed: {:?}", workflow_dispatch);
-        assert!(workflow_dispatch.is_badvalue());
+    fn test_serde_yml_syntax() {
+        let yaml = r#"
+jobs:
+  build-images:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.rebuild_docker == 'true') }}
+    strategy:
+      matrix:
+        runner: [
+          "turbo-prague-small",
+          "turbo-prague",
+          "tp2",
+        ]
+"#;
+        let value: serde_json::Value = serde_yml::from_str(yaml).expect("serde_yml should parse multi-line array");
+        assert!(value["jobs"]["build-images"]["strategy"]["matrix"]["runner"].is_array());
     }
 }
