@@ -49,15 +49,20 @@ async-{{target}}:
 # Define the OS variable
 OS := $(shell uname -s)
 # Conditional variable assignment
-ifeq ($(OS),Darwin)
-DATE=gdate
-else
-DATE=date
-endif
 
-_wait-for-schedule:
-	@DATE_STR=$$(grep -i '^Date:' $(JOB_DIR)/init-response-headers.json | sed -e 's/^[^:]*: //'); \
-	START_TIME=$$($(DATE) -u -Iseconds -d "$${DATE_STR}"); \
+INIT_SECONDS=7
+
+$(JOB_DIR)/server-time.txt: $(JOB_DIR)/init-response-headers.json
+	grep -i '^Date:' $(JOB_DIR)/init-response-headers.json | sed -e 's/^[^:]*: //' >$@
+
+$(JOB_DIR)/init-time-Darwin.txt: $(JOB_DIR)/server-time.txt
+	TZ=UTC date -j -v-$(INIT_SECONDS)S -f "%a, %d %b %Y %T %Z" "$(shell cat $<)" +"%Y-%m-%dT%H:%M:%SZ" >$@
+
+$(JOB_DIR)/init-time-Linux.txt: $(JOB_DIR)/server-time.txt
+	date -d "$(shell cat $<) -u - $(INIT_SECONDS) seconds" +"%Y-%m-%dT%H:%M:%SZ" >$@
+
+_wait-for-schedule: $(JOB_DIR)/init-time-$(OS).txt
+	START_TIME=$(shell cat $<); \
 	echo "https://api.github.com/repos/$(REPO)/actions/workflows/`cat $(JOB_DIR)/workflow.txt`/runs?branch=$(REF)&created=>=$${START_TIME}" \
 	| tee $(JOB_DIR)/runs.url
 
@@ -127,7 +132,7 @@ _eval:
 
 await-all:
 	cat "$(__GHA_RECENT__)" | while read -r DIR; do \
-	  $(MAKE) -f $(firstword $(MAKEFILE_LIST)) await JOB_DIR="$$DIR"; \
+	  $(MAKE) -f $(firstword $(MAKEFILE_LIST)) await JOB_DIR="$$D§§IR"; \
 	done
 
 clean:
