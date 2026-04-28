@@ -132,7 +132,7 @@ _eval:
 
 await-all:
 	cat "$(__GHA_RECENT__)" | while read -r DIR; do \
-	  $(MAKE) -f $(firstword $(MAKEFILE_LIST)) await JOB_DIR="$$D§§IR"; \
+	  $(MAKE) -f $(firstword $(MAKEFILE_LIST)) await JOB_DIR="$$DIR"; \
 	done
 
 clean:
