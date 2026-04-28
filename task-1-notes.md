@@ -65,10 +65,9 @@ This document outlines the design decisions and implementation approach for the 
   - Error handling is simple (IO errors only)
 
 - **Parameter Completion**:
-  - For `--workflow`: No dynamic suggestions (would require checking `.github/workflows/`)
+  - For trailing `ARG` (choice inputs): values are suggested based on workflow YAMLs in `.github/workflows/` found at completion-generation time — `collect_choice_inputs()` scans them and emits the options into the script
   - For `--token`: No suggestions (security-sensitive)
-  - For `--ref`: No suggestions (would require git integration)
-  - Note: Future enhancement could add workflow name completion from directory
+  - For `--ref`: No suggestions (requires git state at runtime, not feasible in static scripts)
 
 **Dependencies**:
 - `clap_complete ^4`: Provides generation logic, no features needed
@@ -113,9 +112,9 @@ DEBUG: Workflow ci.yml dispatched successfully on ref main
 
 Usage:
 ```bash
-gha run --workflow test.yml -r main --arg env=prod        # info level
-gha -v run --workflow test.yml -r main --arg env=prod     # debug level
-gha -vv run --workflow test.yml -r main --arg env=prod    # trace level
+gha run ci.yml -b main arg=val        # info level
+gha -v run ci.yml -b main arg=val     # debug level
+gha -vv run ci.yml -b main arg=val    # trace level
 ```
 
 ## Shell Completion Examples
@@ -234,13 +233,16 @@ Manual testing checklist:
 1. Add run command infrastructure with auth and HTTP dispatch
 2. Add integration tests for gha run command
 3. Add shell completion support and improve logging
+4. Make run CLI match task spec: positional workflow, -b for branch, trailing args
+5. Add choice-value completion for workflow inputs in Zsh and Bash
 
 ## Files Created
 
 - `src/auth.rs` - Authentication handling
 - `src/run.rs` - Workflow execution
-- `src/completion.rs` - Shell completion generation
-- `tests/run.rs` - Integration tests
+- `src/completion.rs` - Shell completion generation with dynamic choice support
+- `tests/run.rs` - Integration tests for the run command
+- `tests/deploy.yml` - Fixture for choice-input completion tests
 
 ## Files Modified
 
@@ -249,4 +251,7 @@ Manual testing checklist:
 - `Cargo.toml` - Added clap_complete dependency
 
 Total lines added: ~650 (including tests and documentation)
+
+
+
 
