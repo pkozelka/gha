@@ -10,6 +10,7 @@ mod run;
 mod auth;
 mod completion;
 mod wait;
+mod artifacts;
 
 #[derive(Parser, Debug)]
 #[command(name = "gha")]
@@ -145,6 +146,29 @@ enum Commands {
         /// Path to write the generated Makefile
         #[arg(short,long, default_value = "workflow_dispatch.Makefile")]
         output_file: PathBuf,
+    },
+    /// Download artifacts from a workflow run
+    #[clap(alias = "art")]
+    Artifacts {
+        /// GitHub repository in the form "owner/repo"
+        #[arg(long)]
+        repo: String,
+
+        /// Workflow run ID
+        #[arg(value_name = "RUN_ID")]
+        run_id: u64,
+
+        /// Directory to save artifacts (default: ./gha-artifacts)
+        #[arg(long, default_value = "./gha-artifacts")]
+        output_dir: PathBuf,
+
+        /// Filter artifacts by name pattern
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// GitHub authentication token
+        #[arg(long)]
+        token: Option<String>,
     },
 }
 
@@ -380,6 +404,30 @@ async fn main() -> anyhow::Result<()> {
                 process::exit(exitcode::SOFTWARE);
             }
             exitcode::OK
+        }
+
+        Some(Commands::Artifacts { repo, run_id, output_dir, filter, token }) => {
+            let auth = match auth::GithubAuth::resolve(token.clone()) {
+                Err(e) => {
+                    error!("Authentication failed: {e}");
+                    process::exit(exitcode::SOFTWARE);
+                }
+                Ok(auth) => auth,
+            };
+
+            match tokio::runtime::Handle::current().block_on(artifacts::download_artifacts(
+                repo,
+                *run_id,
+                &auth.token,
+                output_dir,
+                filter.as_deref(),
+            )) {
+                Err(e) => {
+                    error!("Failed to download artifacts: {e}");
+                    process::exit(exitcode::SOFTWARE);
+                }
+                Ok(_) => exitcode::OK,
+            }
         }
 
         Some(Commands::WorkflowDispatch {
