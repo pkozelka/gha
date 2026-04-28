@@ -56,6 +56,18 @@ enum Commands {
         /// Wait for the workflow run to complete before exiting
         #[arg(long)]
         wait: bool,
+
+        /// Maximum time to wait in seconds (default: 3600 = 1 hour)
+        #[arg(long)]
+        timeout: Option<u64>,
+
+        /// Polling interval in milliseconds (default: 500)
+        #[arg(long)]
+        poll_interval: Option<u64>,
+
+        /// Output format: "human" or "json" (default: human)
+        #[arg(long)]
+        output: Option<String>,
     },
 
     /// Wait for a workflow run to complete
@@ -72,6 +84,18 @@ enum Commands {
         /// GitHub authentication token (overrides GITHUB_TOKEN env and ~/.netrc)
         #[arg(long)]
         token: Option<String>,
+
+        /// Maximum time to wait in seconds (default: 3600 = 1 hour)
+        #[arg(long)]
+        timeout: Option<u64>,
+
+        /// Polling interval in milliseconds (default: 500)
+        #[arg(long)]
+        poll_interval: Option<u64>,
+
+        /// Output format: "human" or "json" (default: human)
+        #[arg(long)]
+        output: Option<String>,
     },
 
     /// Generate shell completions
@@ -190,6 +214,9 @@ async fn main() -> anyhow::Result<()> {
             base_dir,
             args,
             wait: should_wait,
+            timeout,
+            poll_interval,
+            output,
         }) => {
             // Resolve repo
             let repo = match repo {
@@ -258,14 +285,38 @@ async fn main() -> anyhow::Result<()> {
                     }
                     Ok(run_id) => {
                         info!("Waiting for workflow run {} to complete...", run_id);
-                        match wait::wait_for_run(&repo, run_id, &auth.token, &wait::WaitOptions::default()).await {
+
+                        // Build wait options from CLI args
+                        let mut opts = wait::WaitOptions::default();
+                        if let Some(t) = timeout { opts.timeout_secs = *t; }
+                        if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
+                        if let Some(fmt) = output {
+                            opts.output_format = match wait::OutputFormat::from_str(fmt) {
+                                Ok(f) => f,
+                                Err(e) => {
+                                    error!("Invalid output format: {e}");
+                                    process::exit(exitcode::USAGE);
+                                }
+                            };
+                        }
+
+                        match wait::wait_for_run(&repo, run_id, &auth.token, &opts).await {
                             Err(e) => {
                                 error!("Failed to wait for run: {e}");
                                 process::exit(exitcode::SOFTWARE);
                             }
                             Ok(run) => {
                                 let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(wait::WorkflowRunConclusion::Neutral);
-                                info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
+                                match opts.output_format {
+                                    wait::OutputFormat::Human => {
+                                        info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
+                                    }
+                                    wait::OutputFormat::Json => {
+                                        if let Ok(json) = run.to_json() {
+                                            println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+                                        }
+                                    }
+                                }
                                 process::exit(conclusion.exit_code());
                             }
                         }
@@ -276,7 +327,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::Wait { repo, run_id, token }) => {
+        Some(Commands::Wait { repo, run_id, token, timeout, poll_interval, output }) => {
             // Resolve authentication
             let auth = match auth::GithubAuth::resolve(token.clone()) {
                 Err(e) => {
@@ -286,15 +337,38 @@ async fn main() -> anyhow::Result<()> {
                 Ok(auth) => auth,
             };
 
+            // Build wait options from CLI args
+            let mut opts = wait::WaitOptions::default();
+            if let Some(t) = timeout { opts.timeout_secs = *t; }
+            if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
+            if let Some(fmt) = output {
+                opts.output_format = match wait::OutputFormat::from_str(fmt) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        error!("Invalid output format: {e}");
+                        process::exit(exitcode::USAGE);
+                    }
+                };
+            }
+
             // Wait for the run
-            match wait::wait_for_run(repo, *run_id, &auth.token, &wait::WaitOptions::default()).await {
+            match wait::wait_for_run(repo, *run_id, &auth.token, &opts).await {
                 Err(e) => {
                     error!("Failed to wait for run: {e}");
                     process::exit(exitcode::SOFTWARE);
                 }
                 Ok(run) => {
                     let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(wait::WorkflowRunConclusion::Neutral);
-                    info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
+                    match opts.output_format {
+                        wait::OutputFormat::Human => {
+                            info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
+                        }
+                        wait::OutputFormat::Json => {
+                            if let Ok(json) = run.to_json() {
+                                println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+                            }
+                        }
+                    }
                     process::exit(conclusion.exit_code());
                 }
             }
