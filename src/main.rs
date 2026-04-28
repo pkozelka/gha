@@ -1,15 +1,15 @@
 use clap::{CommandFactory, Parser};
 use tracing::{info, error};
-use std::{fs, process};
 use std::path::PathBuf;
 use serde::Serialize;
-
-mod git_utils;
+use std::process;
+use std::fs;mod git_utils;
 mod github_utils;
 mod gen_client;
 mod run;
 mod auth;
 mod completion;
+mod wait;
 
 #[derive(Parser, Debug)]
 #[command(name = "gha")]
@@ -38,7 +38,7 @@ enum Commands {
         repo: Option<String>,
 
         /// Branch or tag ref
-        #[arg(long, short = 'b')]
+        #[arg(long = "ref", short = 'b')]
         r#ref: Option<String>,
 
         /// GitHub authentication token (overrides GITHUB_TOKEN env and ~/.netrc)
@@ -52,6 +52,26 @@ enum Commands {
         /// Input arguments in name=value or name=@file form
         #[arg(value_name = "ARG", trailing_var_arg = true)]
         args: Vec<String>,
+
+        /// Wait for the workflow run to complete before exiting
+        #[arg(long)]
+        wait: bool,
+    },
+
+    /// Wait for a workflow run to complete
+    #[clap(alias = "w")]
+    Wait {
+        /// GitHub repository in the form "owner/repo"
+        #[arg(long)]
+        repo: String,
+
+        /// Workflow run ID
+        #[arg(value_name = "RUN_ID")]
+        run_id: u64,
+
+        /// GitHub authentication token (overrides GITHUB_TOKEN env and ~/.netrc)
+        #[arg(long)]
+        token: Option<String>,
     },
 
     /// Generate shell completions
@@ -169,6 +189,7 @@ async fn main() -> anyhow::Result<()> {
             token,
             base_dir,
             args,
+            wait: should_wait,
         }) => {
             // Resolve repo
             let repo = match repo {
@@ -225,9 +246,57 @@ async fn main() -> anyhow::Result<()> {
             // Run the workflow
             if let Err(e) = run::run_workflow(&repo, workflow, &repo_ref, &auth, &inputs).await {
                 error!("Workflow execution failed: {e}");
-                exitcode::SOFTWARE
+                process::exit(exitcode::SOFTWARE);
+            }
+
+            // If --wait, fetch the run ID and wait for completion
+            if *should_wait {
+                match wait::get_run_id_after_dispatch(&repo, workflow, &repo_ref, &auth.token).await {
+                    Err(e) => {
+                        error!("Failed to get workflow run ID: {e}");
+                        process::exit(exitcode::SOFTWARE);
+                    }
+                    Ok(run_id) => {
+                        info!("Waiting for workflow run {} to complete...", run_id);
+                        match wait::wait_for_run(&repo, run_id, &auth.token).await {
+                            Err(e) => {
+                                error!("Failed to wait for run: {e}");
+                                process::exit(exitcode::SOFTWARE);
+                            }
+                            Ok(run) => {
+                                let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(wait::WorkflowRunConclusion::Neutral);
+                                info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
+                                process::exit(conclusion.exit_code());
+                            }
+                        }
+                    }
+                }
             } else {
                 exitcode::OK
+            }
+        }
+
+        Some(Commands::Wait { repo, run_id, token }) => {
+            // Resolve authentication
+            let auth = match auth::GithubAuth::resolve(token.clone()) {
+                Err(e) => {
+                    error!("Authentication failed: {e}");
+                    process::exit(exitcode::SOFTWARE);
+                }
+                Ok(auth) => auth,
+            };
+
+            // Wait for the run
+            match wait::wait_for_run(repo, *run_id, &auth.token).await {
+                Err(e) => {
+                    error!("Failed to wait for run: {e}");
+                    process::exit(exitcode::SOFTWARE);
+                }
+                Ok(run) => {
+                    let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(wait::WorkflowRunConclusion::Neutral);
+                    info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
+                    process::exit(conclusion.exit_code());
+                }
             }
         }
 
