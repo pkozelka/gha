@@ -177,7 +177,15 @@ struct RenderTarget {
     target: String,
     comment_lines: Vec<String>,
     required_vars: Vec<String>,
-    inputs_str: String,
+    inputs: Vec<RenderInput>,
+}
+
+#[derive(Serialize)]
+struct RenderInput {
+    name: String,
+    jq_var: String,
+    env_var: Option<String>,
+    fixed_value: Option<String>,
 }
 
 /// Build the render model from parsed workflows and git defaults
@@ -277,33 +285,43 @@ fn build_render_target(
         }
     }
 
-    // Inputs JSON string
-    let inputs_str = make_inputs(wf.inputs.as_slice(), choice);
+    let inputs = build_render_inputs(wf.inputs.as_slice(), choice);
 
     RenderTarget {
         target: target.to_string(),
         comment_lines,
         required_vars,
-        inputs_str,
+        inputs,
     }
 }
 
-/// Build only the `inputs` JSON fragment
-fn make_inputs(inputs: &[InputInfo], choice: Option<(&String, &String)>) -> String {
-    let mut parts = Vec::new();
+fn build_render_inputs(inputs: &[InputInfo], choice: Option<(&String, &String)>) -> Vec<RenderInput> {
+    let mut render_inputs = Vec::new();
 
-    for inp in inputs {
-        if let Some((cname, opt)) = &choice {
-            if &inp.name == *cname {
-                parts.push(format!("\"{}\":\"{}\"", inp.name, opt));
+    for (index, inp) in inputs.iter().enumerate() {
+        let jq_var = format!("input_{index}");
+
+        if let Some((choice_name, option)) = &choice {
+            if &inp.name == *choice_name {
+                render_inputs.push(RenderInput {
+                    name: inp.name.clone(),
+                    jq_var,
+                    env_var: None,
+                    fixed_value: Some((*option).clone()),
+                });
                 continue;
             }
         }
-        let var = inp.name.to_uppercase();
-        parts.push(format!("\"{}\":\"$({})\"", inp.name, var));
+
+        render_inputs.push(RenderInput {
+            name: inp.name.clone(),
+            jq_var,
+            env_var: Some(inp.name.to_uppercase()),
+            fixed_value: None,
+        });
     }
 
-    parts.join("++|++")
+    render_inputs
 }
 
 /// Handlebars template for the Makefile

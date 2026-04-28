@@ -19,9 +19,7 @@ __REPO__ := $(subst /,_,$(REPO))
 __GHA_RECENT__ := $(RUNNER_TEMP)/.gha-recent-$(USER).$(__REPO__).txt
 
 define WORKFLOW_DISPATCH
-	mkdir -p "$(JOB_DIR)"
 	printf "$(JOB_DIR)\t$1\n" >> $(__GHA_RECENT__)
-	echo '{"ref":"$(REF)","inputs":{$(subst ++|++,$(__COMMA__),$2)}}' > $(JOB_DIR)/init-request.json
 	echo '$1' > $(JOB_DIR)/workflow.txt
 	$(GITHUB_CURL) 'https://api.github.com/repos/$(REPO)/actions/workflows/$1/dispatches' \
 	-d @$(JOB_DIR)/init-request.json \
@@ -40,7 +38,17 @@ async-{{target}}:
 {{#each required_vars}}
 	test -n "$({{this}})" # requires: {{this}}
 {{/each}}
-	$(call WORKFLOW_DISPATCH,{{../file}},{{inputs_str}})
+	mkdir -p "$(JOB_DIR)"
+	jq -n --arg ref "$(REF)" \
+{{#each inputs}}
+{{#if fixed_value}}
+		--arg {{jq_var}} "{{fixed_value}}" \
+{{else}}
+		--arg {{jq_var}} "$({{env_var}})" \
+{{/if}}
+{{/each}}
+		'{ref:$$ref, inputs: ([{{#each inputs}}{{#if fixed_value}}{include:true,key:"{{name}}",value:$${{jq_var}}}{{else}}{include:($${{jq_var}} != ""),key:"{{name}}",value:$${{jq_var}}}{{/if}}{{#unless @last}}, {{/unless}}{{/each}}] | map(select(.include) | {(.key): .value}) | add // {})}' > "$(JOB_DIR)/init-request.json"
+	$(call WORKFLOW_DISPATCH,{{../file}})
 
 {{/each}}
 {{/each}}
