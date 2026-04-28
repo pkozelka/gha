@@ -15,10 +15,12 @@
 - [Shell Completions](#shell-completions)
 - [Commands](#commands)
   - [run](#run)
+  - [wait](#wait)
   - [gen-workflow-client](#gen-workflow-client)
   - [workflow-dispatch](#workflow-dispatch)
   - [completion](#completion)
 - [Verbose Logging](#verbose-logging)
+- [Exit Codes](#exit-codes)
 - [Environment & `.env` Files](#environment--env-files)
 
 ---
@@ -169,12 +171,67 @@ gha run deploy.yml config=@./config.json
 # With GITHUB_TOKEN already set in the environment
 export GITHUB_TOKEN=ghp_xxxx
 gha run ci.yml
+
+# Wait for the workflow to complete
+gha run deploy.yml --wait environment=prod
+
+# Wait with custom polling (will exit with non-zero if workflow fails)
+gha run deploy.yml --wait --repo myorg/myrepo -b main
 ```
 
 **Input argument format:**
 
 - `name=value` — passes `value` as a string.
 - `name=@path/to/file` — reads the file and passes its content as the value string.
+
+**`--wait` mode:**
+
+When `--wait` is specified, `gha run` will:
+1. Dispatch the workflow
+2. Poll the GitHub API until the run completes
+3. Print the final conclusion (Success, Failure, Canceled, etc.) with the GitHub UI URL
+4. Exit with a status code reflecting the conclusion:
+   - `0` if the workflow succeeded or was skipped
+   - `65` (dataerr) if the workflow failed or requires action
+   - `75` (tempfail) if the workflow was canceled or timed out
+
+---
+
+### `wait`
+
+Alias: `w`
+
+Waits for an already-dispatched workflow run to complete. Useful when you want to dispatch a workflow asynchronously and then wait for it later.
+
+```
+gha wait [OPTIONS] --repo <owner/repo> <RUN_ID>
+```
+
+| Argument / Option | Description |
+|-------------------|-------------|
+| `<RUN_ID>` | Workflow run ID (required, positional) |
+| `--repo <owner/repo>` | GitHub repository (required) |
+| `--token <TOKEN>` | GitHub token (overrides `GITHUB_TOKEN` env and `~/.netrc`) |
+
+**Examples:**
+
+```bash
+# Wait for a specific run (assuming you know the run ID from a previous dispatch)
+gha wait --repo myorg/myrepo 12345678
+
+# With explicit authentication
+gha wait --repo myorg/myrepo 12345678 --token ghp_xxxx
+
+# Common exit codes:
+#   0  -> success
+#  65  -> failure
+#  75  -> canceled
+```
+
+Exit codes:
+- `0` — Success or Skipped
+- `65` — Failure or Action Required
+- `75` — Canceled or Timed Out
 
 ---
 
@@ -287,6 +344,22 @@ gha completion zsh | head -30
 
 ---
 
+## Exit Codes
+
+`gha` uses the following exit codes to indicate the outcome of workflow runs:
+
+| Code | Name | Meaning |
+|------|------|---------|
+| `0` | OK | Workflow succeeded or was skipped |
+| `1` | USAGE | Missing or invalid arguments |
+| `65` | DATAERR | Workflow failed, action required, or malformed data |
+| `70` | SOFTWARE | Internal error (authentication failure, API error, etc.) |
+| `75` | TEMPFAIL | Workflow was canceled or timed out |
+
+These codes allow scripts to distinguish between transient failures (retry-able) and permanent failures (non-retry-able).
+
+---
+
 ## Verbose Logging
 
 All log output goes to **stderr** so that stdout remains clean for machine-readable output (curl command text, generated Makefile content, etc.).
@@ -334,10 +407,18 @@ export GITHUB_TOKEN=ghp_xxxx
 # 3. Run a workflow on the current branch (repo and ref auto-detected)
 gha run deploy.yml environment=staging version=1.0.0
 
-# 4. Generate a Makefile client for all workflows in this repo
+# 4. Run with waiting (blocks until completion, exit code reflects result)
+gha run deploy.yml --wait environment=staging
+
+# 5. Or dispatch asynchronously, then wait later
+gha run deploy.yml environment=staging  # get run ID from output
+# ... do other work ...
+gha wait --repo myorg/myrepo 123456789
+
+# 6. Generate a Makefile client for all workflows in this repo
 gha gen
 
-# 5. Set up shell completions (zsh example)
+# 7. Set up shell completions (zsh example)
 gha completion zsh > ~/.zsh/completions/_gha
 ```
 
