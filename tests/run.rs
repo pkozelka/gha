@@ -15,15 +15,13 @@ fn run_command_validates_inputs() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
     cmd.args(&[
         "run",
-        "--workflow",
         "test.yml",
         "--repo",
         "owner/repo",
-        "--ref",
+        "-b",
         "main",
         "--token",
         "test-token",
-        "--arg",
         "invalid_format",
     ])
     .assert()
@@ -37,6 +35,17 @@ fn run_command_requires_workflow() {
     cmd.args(&["run"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("required").or(predicate::str::contains("workflow")));
+        .stderr(predicate::str::contains("required").or(predicate::str::contains("WORKFLOW")));
 }
+
+#[test]
+fn run_command_help_shows_positional_workflow() {
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
+    cmd.args(&["run", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("<WORKFLOW>"))
+        .stdout(predicate::str::contains("-b, --ref"));
+}
+
 

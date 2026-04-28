@@ -29,16 +29,16 @@ enum Commands {
     /// Run a GitHub Actions workflow directly
     #[clap(alias = "r")]
     Run {
+        /// Workflow file name or ID, e.g., "ci.yml"
+        #[arg(value_name = "WORKFLOW")]
+        workflow: String,
+
         /// GitHub repository in the form "owner/repo"
         #[arg(long)]
         repo: Option<String>,
 
-        /// Workflow file name or ID, e.g., "ci.yml"
-        #[arg(long)]
-        workflow: String,
-
         /// Branch or tag ref
-        #[arg(long, short)]
+        #[arg(long, short = 'b')]
         r#ref: Option<String>,
 
         /// GitHub authentication token (overrides GITHUB_TOKEN env and ~/.netrc)
@@ -50,7 +50,7 @@ enum Commands {
         base_dir: PathBuf,
 
         /// Input arguments in name=value or name=@file form
-        #[arg(long = "arg")]
+        #[arg(value_name = "ARG", trailing_var_arg = true)]
         args: Vec<String>,
     },
 
