@@ -7,6 +7,8 @@ use serde::Serialize;
 mod git_utils;
 mod github_utils;
 mod gen_client;
+mod run;
+mod auth;
 
 #[derive(Parser, Debug)]
 #[command(name = "gha")]
@@ -23,10 +25,32 @@ struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
-    /// Do something useful
+    /// Run a GitHub Actions workflow directly
+    #[clap(alias = "r")]
     Run {
-        #[arg(short, long, default_value = "world")]
-        name: String,
+        /// GitHub repository in the form "owner/repo"
+        #[arg(long)]
+        repo: Option<String>,
+
+        /// Workflow file name or ID, e.g., "ci.yml"
+        #[arg(long)]
+        workflow: String,
+
+        /// Branch or tag ref
+        #[arg(long, short)]
+        r#ref: Option<String>,
+
+        /// GitHub authentication token (overrides GITHUB_TOKEN env and ~/.netrc)
+        #[arg(long)]
+        token: Option<String>,
+
+        /// Base directory for default repo and ref
+        #[arg(long, default_value = ".")]
+        base_dir: PathBuf,
+
+        /// Input arguments in name=value or name=@file form
+        #[arg(long = "arg")]
+        args: Vec<String>,
     },
 
     /// Dispatch a GitHub Actions workflow
@@ -118,9 +142,73 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let exit_code = match &cli.command {
-        Some(Commands::Run { name }) => {
-            println!("Hello, {}!", name);
-            exitcode::OK
+        Some(Commands::Run {
+            repo,
+            workflow,
+            r#ref,
+            token,
+            base_dir,
+            args,
+        }) => {
+            // Resolve repo
+            let repo = match repo {
+                Some(repo) => repo.to_string(),
+                None => {
+                    match git_utils::default_repo_from_git(base_dir.as_path()) {
+                        None => {
+                            error!("Missing repo, and unable to find it locally");
+                            process::exit(exitcode::SOFTWARE);
+                        }
+                        Some(repo) => {
+                            tracing::debug!("Using default repo: {repo}");
+                            repo.to_string()
+                        }
+                    }
+                }
+            };
+
+            // Resolve ref
+            let repo_ref = match r#ref {
+                Some(repo_ref) => repo_ref.to_string(),
+                None => {
+                    match git_utils::default_ref_from_git(base_dir.as_path()) {
+                        None => {
+                            error!("Missing ref, and unable to find it locally");
+                            process::exit(exitcode::SOFTWARE);
+                        }
+                        Some(repo_ref) => {
+                            tracing::debug!("Using default ref: {repo_ref}");
+                            repo_ref.to_string()
+                        }
+                    }
+                }
+            };
+
+            // Resolve authentication
+            let auth = match auth::GithubAuth::resolve(token.clone()) {
+                Err(e) => {
+                    error!("Authentication failed: {e}");
+                    process::exit(exitcode::SOFTWARE);
+                }
+                Ok(auth) => auth,
+            };
+
+            // Parse input arguments
+            let inputs = match run::parse_input_args(args) {
+                Err(e) => {
+                    error!("Invalid input arguments: {e}");
+                    process::exit(exitcode::SOFTWARE);
+                }
+                Ok(inputs) => inputs,
+            };
+
+            // Run the workflow
+            if let Err(e) = run::run_workflow(&repo, workflow, &repo_ref, &auth, &inputs).await {
+                error!("Workflow execution failed: {e}");
+                exitcode::SOFTWARE
+            } else {
+                exitcode::OK
+            }
         }
 
         Some(Commands::GenWorkflowClient { workflows_dir, output_file }) => {
