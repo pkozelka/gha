@@ -16,6 +16,7 @@
 - [Commands](#commands)
   - [run](#run)
   - [wait](#wait)
+  - [artifacts](#artifacts)
   - [gen-workflow-client](#gen-workflow-client)
   - [workflow-dispatch](#workflow-dispatch)
   - [completion](#completion)
