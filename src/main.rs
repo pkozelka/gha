@@ -258,7 +258,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                     Ok(run_id) => {
                         info!("Waiting for workflow run {} to complete...", run_id);
-                        match wait::wait_for_run(&repo, run_id, &auth.token).await {
+                        match wait::wait_for_run(&repo, run_id, &auth.token, &wait::WaitOptions::default()).await {
                             Err(e) => {
                                 error!("Failed to wait for run: {e}");
                                 process::exit(exitcode::SOFTWARE);
@@ -287,7 +287,7 @@ async fn main() -> anyhow::Result<()> {
             };
 
             // Wait for the run
-            match wait::wait_for_run(repo, *run_id, &auth.token).await {
+            match wait::wait_for_run(repo, *run_id, &auth.token, &wait::WaitOptions::default()).await {
                 Err(e) => {
                     error!("Failed to wait for run: {e}");
                     process::exit(exitcode::SOFTWARE);

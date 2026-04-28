@@ -1,9 +1,46 @@
 use anyhow::Result;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::time::Duration;
 use tracing::{debug, info};
 
-/// Workflow run status from GitHub API
+/// Options for waiting for a workflow run
+#[derive(Debug, Clone)]
+pub struct WaitOptions {
+    /// Maximum time to wait in seconds (default: 3600 = 1 hour)
+    pub timeout_secs: u64,
+    /// Polling interval in milliseconds (default: 500)
+    pub poll_interval_ms: u64,
+    /// Output format: "human" or "json"
+    pub output_format: OutputFormat,
+}
+
+impl Default for WaitOptions {
+    fn default() -> Self {
+        Self {
+            timeout_secs: 3600,
+            poll_interval_ms: 500,
+            output_format: OutputFormat::Human,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Human,
+    Json,
+}
+
+impl OutputFormat {
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "human" => Ok(Self::Human),
+            "json" => Ok(Self::Json),
+            _ => Err(anyhow::anyhow!("Invalid output format: {}. Use 'human' or 'json'", s)),
+        }
+    }
+}
+
+/// ...existing code...
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkflowRunStatus {
     Queued,
@@ -120,6 +157,30 @@ impl WorkflowRun {
             created_at,
         })
     }
+
+    /// Convert WorkflowRun to JSON output
+    pub fn to_json(&self) -> Result<Value> {
+        Ok(json!({
+            "id": self.id,
+            "name": self.name,
+            "status": match self.status {
+                WorkflowRunStatus::Queued => "queued",
+                WorkflowRunStatus::InProgress => "in_progress",
+                WorkflowRunStatus::Completed => "completed",
+            },
+            "conclusion": self.conclusion.as_ref().map(|c| match c {
+                WorkflowRunConclusion::Success => "success",
+                WorkflowRunConclusion::Failure => "failure",
+                WorkflowRunConclusion::Canceled => "canceled",
+                WorkflowRunConclusion::Skipped => "skipped",
+                WorkflowRunConclusion::Neutral => "neutral",
+                WorkflowRunConclusion::TimedOut => "timed_out",
+                WorkflowRunConclusion::ActionRequired => "action_required",
+            }),
+            "url": self.html_url,
+            "created_at": self.created_at,
+        }))
+    }
 }
 
 /// Wait for a workflow run to complete, polling the GitHub API.
@@ -130,17 +191,21 @@ pub async fn wait_for_run(
     repo: &str,
     run_id: u64,
     auth_token: &str,
+    options: &WaitOptions,
 ) -> Result<WorkflowRun> {
     let url = format!("https://api.github.com/repos/{}/actions/runs/{}", repo, run_id);
     let client = reqwest::Client::new();
 
     let mut poll_count = 0;
-    let max_polls = 7200; // ~1 hour with 0.5s intervals
+    let max_polls = (options.timeout_secs * 1000) / options.poll_interval_ms;
 
     loop {
         poll_count += 1;
         if poll_count > max_polls {
-            anyhow::bail!("workflow run took too long (>1 hour) to complete");
+            anyhow::bail!(
+                "workflow run took too long (>{} seconds) to complete",
+                options.timeout_secs
+            );
         }
 
         debug!("Polling run status (attempt {})", poll_count);
@@ -190,11 +255,11 @@ pub async fn wait_for_run(
             }
             WorkflowRunStatus::Queued => {
                 debug!("Run is queued, waiting...");
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                tokio::time::sleep(Duration::from_millis(options.poll_interval_ms)).await;
             }
             WorkflowRunStatus::InProgress => {
                 debug!("Run is in progress, waiting...");
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                tokio::time::sleep(Duration::from_millis(options.poll_interval_ms)).await;
             }
         }
     }
@@ -293,4 +358,3 @@ mod tests {
         assert!(WorkflowRunConclusion::Success.display().contains("Success"));
     }
 }
-
