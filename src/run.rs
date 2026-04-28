@@ -37,6 +37,8 @@ pub async fn run_workflow(
     debug!("Payload: {}", serde_json::to_string_pretty(&payload)?);
 
     let client = Client::new();
+
+    // Build request
     let mut builder = client.post(&url);
 
     // Set up headers
@@ -55,11 +57,15 @@ pub async fn run_workflow(
     let request = builder.json(&payload).build()?;
 
     debug!(
-        "HTTP Request: {} {} {:?}",
+        "HTTP Request: {} {}",
         request.method(),
-        request.url(),
-        request.headers()
+        request.url()
     );
+
+    for (name, value) in request.headers() {
+        trace!("Request header: {}: {:?}", name, value);
+    }
+
     trace_request_body(&request)?;
 
     let response = client
@@ -90,7 +96,7 @@ pub async fn run_workflow(
     }
 
     info!(
-        "Workflow {} dispatched successfully on branch/ref {}",
+        "Workflow {} dispatched successfully on ref {}",
         workflow, r#ref
     );
 
@@ -174,6 +180,7 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
 
 
 

@@ -9,6 +9,7 @@ mod github_utils;
 mod gen_client;
 mod run;
 mod auth;
+mod completion;
 
 #[derive(Parser, Debug)]
 #[command(name = "gha")]
@@ -51,6 +52,14 @@ enum Commands {
         /// Input arguments in name=value or name=@file form
         #[arg(long = "arg")]
         args: Vec<String>,
+    },
+
+    /// Generate shell completions
+    #[clap(alias = "comp")]
+    Completion {
+        /// Shell type for completion
+        #[arg(value_enum)]
+        shell: completion::Shell,
     },
 
     /// Dispatch a GitHub Actions workflow
@@ -139,9 +148,20 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(log_level)
+        // Use compact formatting for cleaner output
+        .compact()
+        .with_target(false)
         .init();
 
     let exit_code = match &cli.command {
+        Some(Commands::Completion { shell }) => {
+            if let Err(e) = completion::generate_completion(shell.clone()) {
+                error!("Failed to generate completions: {e}");
+                process::exit(exitcode::SOFTWARE);
+            }
+            exitcode::OK
+        }
+
         Some(Commands::Run {
             repo,
             workflow,

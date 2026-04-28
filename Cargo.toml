@@ -5,7 +5,8 @@ edition = "2024"
 
 [dependencies]
 # CLI argument parsing
-clap = { version = "4", features = ["derive", "env"] }
+clap = { version = "4", features = ["derive", "env", "cargo"] }
+clap_complete = "4"
 
 # Logging
 tracing = "0.1.43"

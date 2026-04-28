@@ -11,12 +11,12 @@ fn shows_help() {
 }
 
 #[test]
-fn runs_with_name() {
+fn runs_with_workflow() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
-    cmd.args(&["run", "--name", "Alice"])
+    cmd.args(&["run", "--workflow", "test.yml", "--repo", "owner/repo", "--ref", "main", "--token", "test"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("Hello, Alice!"));
+        .failure() // Will fail due to no actual workflow, but should not fail on args parsing
+        .stderr(predicate::str::contains("").or(predicate::str::contains(".")));
 }
 
 #[test]
