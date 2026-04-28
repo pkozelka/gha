@@ -61,7 +61,7 @@ OS := $(shell uname -s)
 INIT_SECONDS=7
 
 $(JOB_DIR)/server-time.txt: $(JOB_DIR)/init-response-headers.json
-	grep -i '^Date:' $(JOB_DIR)/init-response-headers.json | sed -e 's/^[^:]*: //' >$@
+	grep -i '^Date:' $(JOB_DIR)/init-response-headers.json | tail -1 | sed -e 's/^[^:]*: //' >$@
 
 $(JOB_DIR)/init-time-Darwin.txt: $(JOB_DIR)/server-time.txt
 	TZ=UTC date -j -v-$(INIT_SECONDS)S -f "%a, %d %b %Y %T %Z" "$(shell cat $<)" +"%Y-%m-%dT%H:%M:%SZ" >$@
