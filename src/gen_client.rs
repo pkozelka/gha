@@ -337,3 +337,77 @@ fn render_with_template(model: &RenderModel) -> Result<String> {
         .context("failed to render Makefile template")?;
     Ok(out)
 }
+
+#[cfg(test)]
+mod generated_makefile_tests {
+    use super::*;
+    use assert_fs::TempDir;
+    use std::fs;
+
+    #[test]
+    fn generated_makefile_uses_real_dir_in_await_all() {
+        let temp = TempDir::new().unwrap();
+        let workflow = temp.path().join("empty.yml");
+        fs::write(
+            &workflow,
+            r#"name: Empty
+on:
+  workflow_dispatch:
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+"#,
+        )
+        .unwrap();
+
+        let output = temp.path().join("generated.mk");
+        generate_makefile(temp.path(), &output).unwrap();
+        let rendered = fs::read_to_string(output).unwrap();
+
+        assert!(rendered.contains(r#"JOB_DIR="$$DIR""#));
+        assert!(!rendered.contains("$$D§§IR"));
+    }
+
+    #[test]
+    fn generated_makefile_builds_inputs_with_jq_and_omits_empty_values() {
+        let temp = TempDir::new().unwrap();
+        let workflow = temp.path().join("mixed.yml");
+        fs::write(
+            &workflow,
+            r#"name: Mixed Inputs
+on:
+  workflow_dispatch:
+    inputs:
+      required_name:
+        description: Required name
+        required: true
+      optional_name:
+        description: Optional name
+      defaulted_name:
+        description: Defaulted name
+        default: World
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+"#,
+        )
+        .unwrap();
+
+        let output = temp.path().join("generated.mk");
+        generate_makefile(temp.path(), &output).unwrap();
+        let rendered = fs::read_to_string(output).unwrap();
+
+        assert!(rendered.contains(r#"test -n "$(REQUIRED_NAME)" # requires: REQUIRED_NAME"#));
+        assert!(rendered.contains(r#"jq -n --arg ref "$(REF)""#));
+        assert!(rendered.contains(r#"key:"optional_name""#));
+        assert!(rendered.contains(r#"key:"defaulted_name""#));
+        assert!(rendered.contains("map(select(.include) | {(.key): .value}) | add // {})"));
+        assert!(!rendered.contains(r#""optional_name":"$(OPTIONAL_NAME)""#));
+        assert!(!rendered.contains(r#""defaulted_name":"$(DEFAULTED_NAME)""#));
+        assert!(!rendered.contains("++|++"));
+    }
+}
