@@ -173,6 +173,7 @@ fn collect_choice_inputs(workflows_dir: &Path) -> std::collections::BTreeMap<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_fs::fixture::{FileWriteStr, PathChild};
 
     #[test]
     fn zsh_helper_empty_when_no_workflows() {
@@ -209,6 +210,34 @@ mod tests {
         assert!(result.contains("'dev'"), "should include choice option value");
         assert!(result.contains("'staging'"), "should include choice option value");
         assert!(result.contains("'prod'"), "should include choice option value");
+    }
+
+    #[test]
+    fn zsh_helper_overrides_generated_spawn_completion_function() {
+        let result = build_zsh_dynamic_helpers(Path::new("tests"));
+        assert!(result.contains("functions[_gha__spawn]"), "should target generated spawn completion");
+        assert!(result.contains("typeset -f _gha__spawn"), "should capture generated spawn function");
+        assert!(result.contains("_gha_spawn_args; return"), "should invoke dynamic spawn arg completion in ARG state");
+    }
+
+    #[test]
+    fn zsh_helper_contains_key_and_value_completion_paths() {
+        let result = build_zsh_dynamic_helpers(Path::new("tests"));
+        assert!(result.contains("compadd -P \"$prefix\""), "should complete values with key= prefix");
+        assert!(result.contains("compadd -S '=' -- $keys"), "should complete known input keys");
+    }
+
+    #[test]
+    fn zsh_helper_escapes_single_quotes_in_choice_values() {
+        let temp = assert_fs::TempDir::new().expect("temp dir");
+        let wf = temp.child("quoted.yml");
+        wf.write_str(
+            "name: Quoted\non:\n  workflow_dispatch:\n    inputs:\n      flavor:\n        required: true\n        type: choice\n        options:\n          - plain\n          - o'clock\n",
+        )
+        .expect("write workflow fixture");
+
+        let result = build_zsh_dynamic_helpers(temp.path());
+        assert!(result.contains("'o\\'clock'"), "single quote in option should be escaped for zsh");
     }
 
     #[test]
