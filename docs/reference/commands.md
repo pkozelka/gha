@@ -50,14 +50,6 @@ gha gen-workflow-client [OPTIONS]
 - `-d, --workflows-dir <DIR>`
 - `-o, --output-file <FILE>`
 
-## `workflow-dispatch` (`wd`)
-
-```bash
-gha workflow-dispatch [OPTIONS]
-```
-
-- dispatch helper modes: `--mode curl|make|call`
-- repeat input with `--arg name=value`
 
 ## `completion` (`comp`)
 

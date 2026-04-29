@@ -18,7 +18,6 @@
 - `gha await [OPTIONS] --repo <owner/repo> <RUN_ID>`
 - `gha artifacts [OPTIONS] --repo <owner/repo> <RUN_ID>`
 - `gha gen-workflow-client [OPTIONS]`
-- `gha workflow-dispatch [OPTIONS] --token <TOKEN>`
 - `gha completion <SHELL>`
 
 ## Exit Code Conventions

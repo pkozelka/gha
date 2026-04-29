@@ -2,10 +2,8 @@ use clap::{CommandFactory, Parser, ValueEnum};
 use serde_json::json;
 use tracing::{info, error};
 use std::path::PathBuf;
-use serde::Serialize;
 use std::process;
-use std::fs;mod git_utils;
-mod github_utils;
+mod git_utils;
 mod gen_client;
 mod spawn;
 mod auth;
@@ -161,36 +159,6 @@ enum Commands {
         shell: completion::Shell,
     },
 
-    /// Dispatch a GitHub Actions workflow
-    #[clap(alias = "wd")]
-    WorkflowDispatch {
-        /// Base directory for default repo and ref
-        #[arg(long, default_value = ".")]
-        base_dir: PathBuf,
-        /// GitHub repository in the form "owner/repo"
-        #[arg(long)]
-        repo: Option<String>,
-
-        /// Workflow file name, e.g., "ci.yml" (default: auto-detect if only one workflow exists)
-        #[arg(long)]
-        workflow: Option<String>,
-
-        /// Branch or tag ref
-        #[arg(long)]
-        r#ref: Option<String>,
-
-        /// GitHub token (can also be provided via GITHUB_TOKEN env)
-        #[arg(long, env = "GITHUB_TOKEN")]
-        token: String,
-
-        /// Input arguments in name=value or name=@file form
-        #[arg(long = "arg")]
-        args: Vec<String>,
-
-        /// Mode: "curl" (print curl), "make" (Makefile syntax), or "call" (execute)
-        #[arg(long, default_value = "curl")]
-        mode: String,
-    },
     /// Generate Makefile clients for workflow_dispatch workflows
     #[clap(alias = "gen")]
     GenWorkflowClient {
@@ -224,12 +192,6 @@ enum Commands {
         #[arg(long)]
         token: Option<String>,
     },
-}
-
-#[derive(Serialize)]
-struct DispatchPayload {
-    r#ref: String,
-    inputs: serde_json::Map<String, serde_json::Value>,
 }
 
 /// Search upward from the current dir until HOME or root for `.env`.
@@ -583,65 +545,12 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::WorkflowDispatch {
-                 base_dir,
-                 repo,
-                 workflow,
-                 r#ref,
-                 token,
-                 args,
-                 mode,
-             }) => {
-            let repo = match repo {
-                Some(repo) => repo.to_string(),
-                None => {
-                    match git_utils::default_repo_from_git(base_dir.as_path()) {
-                        None => anyhow::bail!("Missing repo, and unable to find it locally"),
-                        Some(repo) => {
-                            tracing::debug!("Using default repo: {repo}");
-                            repo.to_string()
-                        }
-                    }
-                }
-            };
-            let repo_ref = match r#ref {
-                Some(repo_ref) => repo_ref.to_string(),
-                None => {
-                    match git_utils::default_ref_from_git(base_dir.as_path()) {
-                        None => anyhow::bail!("Missing ref, and unable to find it locally"),
-                        Some(repo_ref) => {
-                            tracing::debug!("Using default ref: {repo_ref}");
-                            repo_ref.to_string()
-                        }
-                    }
-                }
-            };
-            // resolve workflow
-            let workflow = match workflow {
-                Some(w) => w.clone(),
-                None => match github_utils::default_workflow_from_dir(base_dir) {
-                    None => anyhow::bail!("Could not determine workflow automatically. Please use --workflow."),
-                    Some(workflow) => {
-                        tracing::debug!("Using single existing workflow as default: {workflow}");
-                        workflow
-                    },
-                }
-            };
-
-            if let Err(e) = workflow_dispatch(&repo, &workflow, &repo_ref, token, args, mode).await {
-                error!("Workflow dispatch failed: {e}");
-                exitcode::SOFTWARE
-            } else {
-                exitcode::OK
-            }
-        }
-
         None => {
             let mut cmd = Cli::command();
             let mut buf = Vec::new();
             cmd.write_help(&mut buf).unwrap();
             let help_text = String::from_utf8_lossy(&buf);
-            
+
             error!("No command provided. Showing help:\n{}", help_text);
 
             exitcode::USAGE
@@ -651,83 +560,3 @@ async fn main() -> anyhow::Result<()> {
     process::exit(exit_code);
 }
 
-async fn workflow_dispatch(
-    repo: &str,
-    workflow: &str,
-    r#ref: &str,
-    token: &str,
-    args: &[String],
-    mode: &str,
-) -> anyhow::Result<()> {
-    let mut inputs = serde_json::Map::new();
-
-    for arg in args {
-        if let Some((key, value)) = arg.split_once('=') {
-            let val = if value.starts_with('@') {
-                let file_path = &value[1..];
-                let contents = fs::read_to_string(file_path)?;
-                serde_json::Value::String(contents)
-            } else {
-                serde_json::Value::String(value.to_string())
-            };
-            inputs.insert(key.to_string(), val);
-        } else {
-            return Err(anyhow::anyhow!("Invalid arg format: {arg}"));
-        }
-    }
-
-    let payload = DispatchPayload {
-        r#ref: r#ref.to_string(),
-        inputs,
-    };
-
-    let url = format!(
-        "https://api.github.com/repos/{}/actions/workflows/{}/dispatches",
-        repo, workflow
-    );
-
-    let json_str = serde_json::to_string_pretty(&payload)?;
-
-    if mode == "curl" {
-        let escaped_json = json_str.replace('\'', "\\'");
-        println!(
-            "curl -X POST \\
-  -H 'Accept: application/vnd.github+json' \\
-  -H 'Authorization: Bearer {token}' \\
-  -H 'X-GitHub-Api-Version: 2022-11-28' \\
-  https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches \\
-  -d '{escaped_json}'");
-    } else if mode == "make" {
-        let escaped_json = json_str.replace('\'', "\\'");
-        println!(
-            "\tcurl -X POST \\\n\
-        \t  -H 'Accept: application/vnd.github+json' \\\n\
-        \t  -H 'Authorization: Bearer {token}' \\\n\
-        \t  -H 'X-GitHub-Api-Version: 2022-11-28' \\\n\
-        \t  https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches \\\n\
-        \t  -d '{escaped_json}'");
-    } else if mode == "call" {
-        let client = reqwest::Client::new();
-        let res = client
-            .post(&url)
-            .header("Accept", "application/vnd.github+json")
-            .header("Authorization", format!("Bearer {token}", ))
-            .header("User-Agent", "gha")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .json(&payload)
-            .send()
-            .await?;
-
-        let response_status = res.status();
-        if !response_status.is_success() {
-            let text = res.text().await?;
-            return Err(anyhow::anyhow!("GitHub API error: {response_status} - {text}"));
-        }
-
-        info!("Workflow dispatch successful");
-    } else {
-        return Err(anyhow::anyhow!("Invalid mode: {}", mode));
-    }
-
-    Ok(())
-}

@@ -2,14 +2,13 @@
 
 ## Project overview
 - `gha` is a small Rust CLI for GitHub Actions work: it can dispatch a workflow directly and generate a Makefile client for `workflow_dispatch` workflows.
-- The CLI entry point is `src/main.rs`; most nontrivial behavior fans out into `src/git_utils.rs`, `src/github_utils.rs`, and `src/gen_client.rs`.
+- The CLI entry point is `src/main.rs`; most nontrivial behavior fans out into `src/git_utils.rs`, `src/awaiting.rs`, and `src/gen_client.rs`.
 - There were no existing repo-local AI instruction files or `README.md` files found in the requested search paths.
 
 ## Core flows to understand first
-- `workflow-dispatch` / `wd` in `src/main.rs` resolves missing defaults from the local checkout before hitting GitHub:
+- `spawn` in `src/main.rs` resolves missing defaults from the local checkout before hitting GitHub:
   - repo from `git remote.origin.url` via `git_utils::default_repo_from_git`
   - ref from current branch, then fallback SHA, via `git_utils::default_ref_from_git`
-  - workflow filename only when exactly one YAML exists under `.github/workflows` via `github_utils::default_workflow_from_dir`
 - `gen-workflow-client` / `gen` in `src/main.rs` calls `gen_client::generate_makefile`, which:
   - scans a workflows directory for `.yml` / `.yaml`
   - parses only `on.workflow_dispatch` entries in `parse_workflow`
@@ -26,6 +25,7 @@
 
 ## Key files to use as references
 - `src/main.rs`: clap subcommands, `.env` behavior, dispatch modes (`curl`, `make`, `call`)
+- `src/awaiting.rs`: await logic, polling options, workflow run status mapping
 - `src/gen_client.rs`: workflow parsing, render model, Handlebars integration
 - `src/template.Makefile`: source-of-truth template for generated clients
 - `workflow_dispatch.Makefile`: checked-in example of generated client structure and runtime flow
