@@ -69,7 +69,25 @@ fn spawn_command_rejects_follow_logs_without_await() {
     ])
     .assert()
     .failure()
-    .stderr(predicate::str::contains("requires --await"));
+    .stderr(predicate::str::contains("--await"));
+}
+
+#[test]
+fn spawn_command_rejects_timeout_without_await() {
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
+    cmd.args(["spawn", "test.yml", "--timeout", "10"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--await"));
+}
+
+#[test]
+fn spawn_command_rejects_webhook_without_await() {
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
+    cmd.args(["spawn", "test.yml", "--webhook"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--await"));
 }
 
 

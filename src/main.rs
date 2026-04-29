@@ -1,4 +1,5 @@
 use clap::{CommandFactory, Parser, ValueEnum};
+use serde_json::json;
 use tracing::{info, error};
 use std::path::PathBuf;
 use serde::Serialize;
@@ -76,11 +77,11 @@ enum Commands {
         r#await: bool,
 
         /// Maximum time to await in seconds (default: 3600 = 1 hour)
-        #[arg(long)]
+        #[arg(long, requires = "await")]
         timeout: Option<u64>,
 
         /// Polling interval in milliseconds while awaiting (default: 500)
-        #[arg(long)]
+        #[arg(long, requires = "await")]
         poll_interval: Option<u64>,
 
         /// Output format: "human" or "json" (default: human)
@@ -88,19 +89,19 @@ enum Commands {
         output: Option<OutputArg>,
 
         /// Await completion via webhook listener instead of API polling
-        #[arg(long)]
+        #[arg(long, requires = "await")]
         webhook: bool,
 
         /// Local port for webhook listener (used with --webhook)
-        #[arg(long, default_value_t = 3456)]
+        #[arg(long, default_value_t = 3456, requires = "await", requires = "webhook")]
         webhook_port: u16,
 
         /// Shared secret used to validate webhook signatures
-        #[arg(long, env = "GITHUB_WEBHOOK_SECRET")]
+        #[arg(long, env = "GITHUB_WEBHOOK_SECRET", requires = "await", requires = "webhook")]
         webhook_secret: Option<String>,
 
         /// Stream logs while awaiting completion (requires --await)
-        #[arg(long)]
+        #[arg(long, requires = "await")]
         follow_logs: bool,
     },
 
@@ -347,88 +348,102 @@ async fn main() -> anyhow::Result<()> {
                 Ok(inputs) => inputs,
             };
 
-            if *follow_logs && !*should_await {
-                error!("--follow-logs requires --await");
-                process::exit(exitcode::USAGE);
-            }
-
             // Spawn the workflow
             if let Err(e) = spawn::spawn_workflow(&repo, workflow, &repo_ref, &auth, &inputs).await {
                 error!("Workflow execution failed: {e}");
                 process::exit(exitcode::SOFTWARE);
             }
 
+            let run_id = match awaiting::get_run_id_after_dispatch(&repo, workflow, &repo_ref, &auth.token).await {
+                Err(e) => {
+                    error!("Failed to get workflow run ID after spawn: {e}");
+                    process::exit(exitcode::SOFTWARE);
+                }
+                Ok(run_id) => run_id,
+            };
+
+            let run_url = format!("https://github.com/{repo}/actions/runs/{run_id}");
+
             // If --await, fetch the run ID and await completion
             if *should_await {
-                match awaiting::get_run_id_after_dispatch(&repo, workflow, &repo_ref, &auth.token).await {
-                    Err(e) => {
-                        error!("Failed to get workflow run ID: {e}");
-                        process::exit(exitcode::SOFTWARE);
+                {
+                    info!("Awaiting workflow run {} to complete...", run_id);
+
+                    // Build await options from CLI args
+                    let mut opts = awaiting::AwaitOptions::default();
+                    if let Some(t) = timeout { opts.timeout_secs = *t; }
+                    if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
+                    if let Some(fmt) = output { opts.output_format = (*fmt).clone().into(); }
+                    opts.use_webhook = *webhook;
+                    opts.webhook_port = *webhook_port;
+                    opts.webhook_secret = webhook_secret.clone();
+                    opts.follow_logs = *follow_logs;
+
+                    if opts.use_webhook && opts.webhook_secret.is_none() {
+                        error!("--webhook requires --webhook-secret (or GITHUB_WEBHOOK_SECRET)");
+                        process::exit(exitcode::USAGE);
                     }
-                    Ok(run_id) => {
-                        info!("Awaiting workflow run {} to complete...", run_id);
 
-                        // Build await options from CLI args
-                        let mut opts = awaiting::AwaitOptions::default();
-                        if let Some(t) = timeout { opts.timeout_secs = *t; }
-                        if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
-                        if let Some(fmt) = output { opts.output_format = (*fmt).clone().into(); }
-                        opts.use_webhook = *webhook;
-                        opts.webhook_port = *webhook_port;
-                        opts.webhook_secret = webhook_secret.clone();
-                        opts.follow_logs = *follow_logs;
+                    let log_task = if opts.follow_logs {
+                        let repo_for_logs = repo.clone();
+                        let token_for_logs = auth.token.clone();
+                        let interval_ms = opts.poll_interval_ms;
+                        Some(tokio::spawn(async move {
+                            logs::stream_logs(
+                                &repo_for_logs,
+                                run_id,
+                                &token_for_logs,
+                                interval_ms,
+                            )
+                            .await
+                        }))
+                    } else {
+                        None
+                    };
 
-                        if opts.use_webhook && opts.webhook_secret.is_none() {
-                            error!("--webhook requires --webhook-secret (or GITHUB_WEBHOOK_SECRET)");
-                            process::exit(exitcode::USAGE);
+                    match awaiting::await_run(&repo, run_id, &auth.token, &opts).await {
+                        Err(e) => {
+                            if let Some(handle) = log_task {
+                                handle.abort();
+                            }
+                            error!("Failed to await run: {e}");
+                            process::exit(exitcode::SOFTWARE);
                         }
-
-                        let log_task = if opts.follow_logs {
-                            let repo_for_logs = repo.clone();
-                            let token_for_logs = auth.token.clone();
-                            let interval_ms = opts.poll_interval_ms;
-                            Some(tokio::spawn(async move {
-                                logs::stream_logs(
-                                    &repo_for_logs,
-                                    run_id,
-                                    &token_for_logs,
-                                    interval_ms,
-                                )
-                                .await
-                            }))
-                        } else {
-                            None
-                        };
-
-                        match awaiting::await_run(&repo, run_id, &auth.token, &opts).await {
-                            Err(e) => {
-                                if let Some(handle) = log_task {
-                                    handle.abort();
-                                }
-                                error!("Failed to await run: {e}");
-                                process::exit(exitcode::SOFTWARE);
+                        Ok(run) => {
+                            if let Some(handle) = log_task {
+                                handle.abort();
                             }
-                            Ok(run) => {
-                                if let Some(handle) = log_task {
-                                    handle.abort();
+                            let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(awaiting::WorkflowRunConclusion::Neutral);
+                            match opts.output_format {
+                                awaiting::OutputFormat::Human => {
+                                    info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
                                 }
-                                let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(awaiting::WorkflowRunConclusion::Neutral);
-                                match opts.output_format {
-                                    awaiting::OutputFormat::Human => {
-                                        info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
-                                    }
-                                    awaiting::OutputFormat::Json => {
-                                        if let Ok(json) = run.to_json() {
-                                            println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
-                                        }
+                                awaiting::OutputFormat::Json => {
+                                    if let Ok(json) = run.to_json() {
+                                        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
                                     }
                                 }
-                                process::exit(conclusion.exit_code());
                             }
+                            process::exit(conclusion.exit_code());
                         }
                     }
                 }
             } else {
+                if matches!(output, Some(OutputArg::Json)) {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&json!({
+                            "id": run_id,
+                            "repo": repo,
+                            "workflow": workflow,
+                            "ref": repo_ref,
+                            "url": run_url,
+                        }))
+                        .unwrap_or_default()
+                    );
+                } else {
+                    println!("Spawned workflow run: {} — {}", run_id, run_url);
+                }
                 exitcode::OK
             }
         }
