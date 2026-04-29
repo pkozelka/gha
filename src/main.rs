@@ -216,6 +216,54 @@ fn load_env_file() -> bool {
     }
 }
 
+fn build_await_options(
+    timeout: &Option<u64>,
+    poll_interval: &Option<u64>,
+    output: &Option<OutputArg>,
+    webhook: bool,
+    webhook_port: u16,
+    webhook_secret: Option<String>,
+    follow_logs: bool,
+) -> awaiting::AwaitOptions {
+    let mut opts = awaiting::AwaitOptions::default();
+    if let Some(t) = timeout {
+        opts.timeout_secs = *t;
+    }
+    if let Some(p) = poll_interval {
+        opts.poll_interval_ms = *p;
+    }
+    if let Some(fmt) = output {
+        opts.output_format = fmt.clone().into();
+    }
+    opts.use_webhook = webhook;
+    opts.webhook_port = webhook_port;
+    opts.webhook_secret = webhook_secret;
+    opts.follow_logs = follow_logs;
+    opts
+}
+
+fn print_final_run_output(
+    run: &awaiting::WorkflowRun,
+    output_format: awaiting::OutputFormat,
+) -> awaiting::WorkflowRunConclusion {
+    let conclusion = run
+        .conclusion
+        .as_ref()
+        .cloned()
+        .unwrap_or(awaiting::WorkflowRunConclusion::Neutral);
+    match output_format {
+        awaiting::OutputFormat::Human => {
+            info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
+        }
+        awaiting::OutputFormat::Json => {
+            if let Ok(json) = run.to_json() {
+                println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+            }
+        }
+    }
+    conclusion
+}
+
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -336,14 +384,15 @@ async fn main() -> anyhow::Result<()> {
                     info!("Awaiting workflow run {} to complete...", run_id);
 
                     // Build await options from CLI args
-                    let mut opts = awaiting::AwaitOptions::default();
-                    if let Some(t) = timeout { opts.timeout_secs = *t; }
-                    if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
-                    if let Some(fmt) = output { opts.output_format = (*fmt).clone().into(); }
-                    opts.use_webhook = *webhook;
-                    opts.webhook_port = *webhook_port;
-                    opts.webhook_secret = webhook_secret.clone();
-                    opts.follow_logs = *follow_logs;
+                    let opts = build_await_options(
+                        timeout,
+                        poll_interval,
+                        output,
+                        *webhook,
+                        *webhook_port,
+                        webhook_secret.clone(),
+                        *follow_logs,
+                    );
 
                     if opts.use_webhook && opts.webhook_secret.is_none() {
                         error!("--webhook requires --webhook-secret (or GITHUB_WEBHOOK_SECRET)");
@@ -379,17 +428,7 @@ async fn main() -> anyhow::Result<()> {
                             if let Some(handle) = log_task {
                                 handle.abort();
                             }
-                            let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(awaiting::WorkflowRunConclusion::Neutral);
-                            match opts.output_format {
-                                awaiting::OutputFormat::Human => {
-                                    info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
-                                }
-                                awaiting::OutputFormat::Json => {
-                                    if let Ok(json) = run.to_json() {
-                                        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
-                                    }
-                                }
-                            }
+                            let conclusion = print_final_run_output(&run, opts.output_format);
                             process::exit(conclusion.exit_code());
                         }
                     }
@@ -441,14 +480,15 @@ async fn main() -> anyhow::Result<()> {
             };
 
             // Build await options from CLI args
-            let mut opts = awaiting::AwaitOptions::default();
-            if let Some(t) = timeout { opts.timeout_secs = *t; }
-            if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
-            if let Some(fmt) = output { opts.output_format = (*fmt).clone().into(); }
-            opts.use_webhook = *webhook;
-            opts.webhook_port = *webhook_port;
-            opts.webhook_secret = webhook_secret.clone();
-            opts.follow_logs = *follow_logs;
+            let opts = build_await_options(
+                timeout,
+                poll_interval,
+                output,
+                *webhook,
+                *webhook_port,
+                webhook_secret.clone(),
+                *follow_logs,
+            );
 
             if opts.use_webhook && opts.webhook_secret.is_none() {
                 error!("--webhook requires --webhook-secret (or GITHUB_WEBHOOK_SECRET)");
@@ -486,17 +526,7 @@ async fn main() -> anyhow::Result<()> {
                     if let Some(handle) = log_task {
                         handle.abort();
                     }
-                    let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(awaiting::WorkflowRunConclusion::Neutral);
-                    match opts.output_format {
-                        awaiting::OutputFormat::Human => {
-                            info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
-                        }
-                        awaiting::OutputFormat::Json => {
-                            if let Ok(json) = run.to_json() {
-                                println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
-                            }
-                        }
-                    }
+                    let conclusion = print_final_run_output(&run, opts.output_format);
                     process::exit(conclusion.exit_code());
                 }
             }
