@@ -296,60 +296,74 @@ pub async fn get_run_id_after_dispatch(
 ) -> Result<u64> {
     let client = reqwest::Client::new();
     let url = format!(
-        "https://api.github.com/repos/{}/actions/workflows/{}/runs?branch={}&per_page=1&status=queued",
+        "https://api.github.com/repos/{}/actions/workflows/{}/runs?branch={}&per_page=20&event=workflow_dispatch",
         repo, workflow, r#ref
     );
 
-    let mut builder = client.get(&url);
-    builder = builder
-        .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "gha")
-        .header("X-GitHub-Api-Version", "2022-11-28");
+    for attempt in 1..=20 {
+        let mut builder = client.get(&url);
+        builder = builder
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "gha")
+            .header("X-GitHub-Api-Version", "2022-11-28");
 
-    if !auth_token.is_empty() {
-        builder = builder.header("Authorization", format!("Bearer {}", auth_token));
-    }
+        if !auth_token.is_empty() {
+            builder = builder.header("Authorization", format!("Bearer {}", auth_token));
+        }
 
-    let response = builder
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to get run list: {}", e))?;
+        let response = builder
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get run list: {}", e))?;
 
-    let status = response.status();
-    if !status.is_success() {
-        let text = response
+        let status = response.status();
+        if !status.is_success() {
+            let text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "(no response body)".to_string());
+            anyhow::bail!(
+                "Failed to fetch run ID from workflow list: {} - {}",
+                status,
+                text
+            );
+        }
+
+        let body = response
             .text()
             .await
-            .unwrap_or_else(|_| "(no response body)".to_string());
-        anyhow::bail!(
-            "Failed to fetch run ID from workflow list: {} - {}",
-            status,
-            text
-        );
+            .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
+
+        let json: Value = serde_json::from_str(&body)
+            .map_err(|e| anyhow::anyhow!("Failed to parse runs response: {}", e))?;
+
+        let runs = json["workflow_runs"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("No 'workflow_runs' array in response"))?;
+
+        if let Some(run_id) = runs
+            .iter()
+            .find(|r| {
+                matches!(
+                    r["status"].as_str(),
+                    Some("queued") | Some("in_progress") | Some("completed")
+                )
+            })
+            .and_then(|r| r["id"].as_u64())
+        {
+            debug!("Found run ID on attempt {}: {}", attempt, run_id);
+            return Ok(run_id);
+        }
+
+        debug!("Run ID not available yet (attempt {}), retrying...", attempt);
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
-    let body = response
-        .text()
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
-
-    let json: Value = serde_json::from_str(&body)
-        .map_err(|e| anyhow::anyhow!("Failed to parse runs response: {}", e))?;
-
-    let runs = json["workflow_runs"]
-        .as_array()
-        .ok_or_else(|| anyhow::anyhow!("No 'workflow_runs' array in response"))?;
-
-    if runs.is_empty() {
-        anyhow::bail!("No queued runs found for workflow {} on ref {}", workflow, r#ref);
-    }
-
-    let run_id = runs[0]["id"]
-        .as_u64()
-        .ok_or_else(|| anyhow::anyhow!("missing 'id' in run response"))?;
-
-    debug!("Found run ID: {}", run_id);
-    Ok(run_id)
+    anyhow::bail!(
+        "Unable to determine run ID for workflow {} on ref {} after retries",
+        workflow,
+        r#ref
+    )
 }
 
 #[cfg(test)]

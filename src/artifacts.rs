@@ -73,7 +73,13 @@ pub async fn download_artifacts(
 
     fs::create_dir_all(output_dir).map_err(|e| ArtifactError::Download(e.to_string()))?;
     let mut downloaded = 0;
-    let glob_filter = filter.and_then(|p| glob::Pattern::new(p).ok());
+    let glob_filter = match filter {
+        Some(pattern) => Some(
+            glob::Pattern::new(pattern)
+                .map_err(|e| ArtifactError::Download(format!("Invalid filter pattern '{}': {}", pattern, e)))?,
+        ),
+        None => None,
+    };
 
     for artifact in artifacts {
         let name = artifact["name"]

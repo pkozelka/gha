@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 const COLOR_PALETTE: &[&str] = &[
     colors::CYAN,
@@ -35,6 +35,7 @@ pub async fn stream_logs(
 
     let mut line_offsets: BTreeMap<String, usize> = BTreeMap::new();
     let sleep_ms = poll_interval_ms.max(250);
+    let mut warned_log_fetch_failure = false;
 
     info!("Streaming logs for run {}...", run_id);
 
@@ -42,26 +43,35 @@ pub async fn stream_logs(
         let run_json = fetch_json(&client, &run_url, auth_token).await?;
         let status = run_json["status"].as_str().unwrap_or("unknown");
 
-        if let Ok(log_files) = fetch_logs_archive(&client, &logs_url, auth_token).await {
-            for (idx, (name, contents)) in log_files.iter().enumerate() {
-                let seen = line_offsets.get(name).copied().unwrap_or(0);
-                let lines: Vec<&str> = contents.lines().collect();
-                if lines.len() <= seen {
-                    continue;
-                }
+        match fetch_logs_archive(&client, &logs_url, auth_token).await {
+            Ok(log_files) => {
+                warned_log_fetch_failure = false;
+                for (idx, (name, contents)) in log_files.iter().enumerate() {
+                    let seen = line_offsets.get(name).copied().unwrap_or(0);
+                    let lines: Vec<&str> = contents.lines().collect();
+                    if lines.len() <= seen {
+                        continue;
+                    }
 
-                let color = COLOR_PALETTE[idx % COLOR_PALETTE.len()];
-                for line in &lines[seen..] {
-                    println!(
-                        "[{}] {}{}{} {}",
-                        unix_timestamp(),
-                        color,
-                        name,
-                        colors::RESET,
-                        line
-                    );
+                    let color = COLOR_PALETTE[idx % COLOR_PALETTE.len()];
+                    for line in &lines[seen..] {
+                        println!(
+                            "[{}] {}{}{} {}",
+                            unix_timestamp(),
+                            color,
+                            name,
+                            colors::RESET,
+                            line
+                        );
+                    }
+                    line_offsets.insert(name.clone(), lines.len());
                 }
-                line_offsets.insert(name.clone(), lines.len());
+            }
+            Err(e) => {
+                if !warned_log_fetch_failure {
+                    warn!("Unable to fetch live logs right now: {}", e);
+                    warned_log_fetch_failure = true;
+                }
             }
         }
 
