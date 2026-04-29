@@ -21,10 +21,13 @@ Key flags:
 ## `await` (`a`)
 
 ```bash
-gha await [OPTIONS] --repo <owner/repo> <RUN_ID>
+gha await [OPTIONS] <RUN_ID>
 ```
 
 Key flags mirror await-related `spawn` flags.
+
+- `--repo <owner/repo>` is optional and auto-detected from git when omitted
+- `--base-dir <DIR>` controls where git detection runs
 
 ## `artifacts` (`art`)
 

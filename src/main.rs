@@ -108,9 +108,13 @@ enum Commands {
     /// Await a workflow run to complete
     #[clap(alias = "a")]
     Await {
-        /// GitHub repository in the form "owner/repo"
+        /// GitHub repository in the form "owner/repo" (auto-detected if omitted)
         #[arg(long)]
-        repo: String,
+        repo: Option<String>,
+
+        /// Base directory for default repo detection
+        #[arg(long, default_value = ".")]
+        base_dir: PathBuf,
 
         /// Workflow run ID
         #[arg(value_name = "RUN_ID")]
@@ -448,7 +452,23 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::Await { repo, run_id, token, timeout, poll_interval, output, webhook, webhook_port, webhook_secret, follow_logs }) => {
+        Some(Commands::Await { repo, base_dir, run_id, token, timeout, poll_interval, output, webhook, webhook_port, webhook_secret, follow_logs }) => {
+            let repo = match repo {
+                Some(repo) => repo.to_string(),
+                None => {
+                    match git_utils::default_repo_from_git(base_dir.as_path()) {
+                        None => {
+                            error!("Missing repo, and unable to find it locally");
+                            process::exit(exitcode::SOFTWARE);
+                        }
+                        Some(repo) => {
+                            tracing::debug!("Using default repo: {repo}");
+                            repo.to_string()
+                        }
+                    }
+                }
+            };
+
             // Resolve authentication
             let auth = match auth::GithubAuth::resolve(token.clone()) {
                 Err(e) => {
@@ -492,7 +512,7 @@ async fn main() -> anyhow::Result<()> {
             };
 
             // Await the run
-            match awaiting::await_run(repo, *run_id, &auth.token, &opts).await {
+            match awaiting::await_run(&repo, *run_id, &auth.token, &opts).await {
                 Err(e) => {
                     if let Some(handle) = log_task {
                         handle.abort();

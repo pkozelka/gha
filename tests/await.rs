@@ -23,3 +23,12 @@ fn await_command_rejects_invalid_output_value() {
         .stderr(predicate::str::contains("possible values"));
 }
 
+#[test]
+fn await_command_parses_without_repo_flag() {
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
+    cmd.args(["await", "123", "--output", "xml"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("possible values"));
+}
+
