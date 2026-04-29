@@ -45,7 +45,31 @@ fn run_command_help_shows_positional_workflow() {
         .assert()
         .success()
         .stdout(predicate::str::contains("<WORKFLOW>"))
-        .stdout(predicate::str::contains("-b, --ref"));
+        .stdout(predicate::str::contains("-b, --ref"))
+        .stdout(predicate::str::contains("--timeout"))
+        .stdout(predicate::str::contains("--poll-interval"))
+        .stdout(predicate::str::contains("--output"))
+        .stdout(predicate::str::contains("--webhook"))
+        .stdout(predicate::str::contains("--follow-logs"));
+}
+
+#[test]
+fn run_command_rejects_follow_logs_without_wait() {
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
+    cmd.args(&[
+        "run",
+        "test.yml",
+        "--repo",
+        "owner/repo",
+        "-b",
+        "main",
+        "--token",
+        "test-token",
+        "--follow-logs",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("requires --wait"));
 }
 
 

@@ -1,4 +1,4 @@
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, ValueEnum};
 use tracing::{info, error};
 use std::path::PathBuf;
 use serde::Serialize;
@@ -11,6 +11,23 @@ mod auth;
 mod completion;
 mod wait;
 mod artifacts;
+mod webhook;
+mod logs;
+
+#[derive(Clone, Debug, ValueEnum)]
+enum OutputArg {
+    Human,
+    Json,
+}
+
+impl From<OutputArg> for wait::OutputFormat {
+    fn from(value: OutputArg) -> Self {
+        match value {
+            OutputArg::Human => wait::OutputFormat::Human,
+            OutputArg::Json => wait::OutputFormat::Json,
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "gha")]
@@ -67,8 +84,24 @@ enum Commands {
         poll_interval: Option<u64>,
 
         /// Output format: "human" or "json" (default: human)
+        #[arg(long, value_enum)]
+        output: Option<OutputArg>,
+
+        /// Wait for completion via webhook listener instead of API polling
         #[arg(long)]
-        output: Option<String>,
+        webhook: bool,
+
+        /// Local port for webhook listener (used with --webhook)
+        #[arg(long, default_value_t = 3456)]
+        webhook_port: u16,
+
+        /// Shared secret used to validate webhook signatures
+        #[arg(long, env = "GITHUB_WEBHOOK_SECRET")]
+        webhook_secret: Option<String>,
+
+        /// Stream logs while waiting for completion (requires --wait)
+        #[arg(long)]
+        follow_logs: bool,
     },
 
     /// Wait for a workflow run to complete
@@ -95,8 +128,24 @@ enum Commands {
         poll_interval: Option<u64>,
 
         /// Output format: "human" or "json" (default: human)
+        #[arg(long, value_enum)]
+        output: Option<OutputArg>,
+
+        /// Wait for completion via webhook listener instead of API polling
         #[arg(long)]
-        output: Option<String>,
+        webhook: bool,
+
+        /// Local port for webhook listener (used with --webhook)
+        #[arg(long, default_value_t = 3456)]
+        webhook_port: u16,
+
+        /// Shared secret used to validate webhook signatures
+        #[arg(long, env = "GITHUB_WEBHOOK_SECRET")]
+        webhook_secret: Option<String>,
+
+        /// Stream logs while waiting for completion
+        #[arg(long)]
+        follow_logs: bool,
     },
 
     /// Generate shell completions
@@ -241,6 +290,10 @@ async fn main() -> anyhow::Result<()> {
             timeout,
             poll_interval,
             output,
+            webhook,
+            webhook_port,
+            webhook_secret,
+            follow_logs,
         }) => {
             // Resolve repo
             let repo = match repo {
@@ -294,6 +347,11 @@ async fn main() -> anyhow::Result<()> {
                 Ok(inputs) => inputs,
             };
 
+            if *follow_logs && !*should_wait {
+                error!("--follow-logs requires --wait");
+                process::exit(exitcode::USAGE);
+            }
+
             // Run the workflow
             if let Err(e) = run::run_workflow(&repo, workflow, &repo_ref, &auth, &inputs).await {
                 error!("Workflow execution failed: {e}");
@@ -314,22 +372,46 @@ async fn main() -> anyhow::Result<()> {
                         let mut opts = wait::WaitOptions::default();
                         if let Some(t) = timeout { opts.timeout_secs = *t; }
                         if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
-                        if let Some(fmt) = output {
-                            opts.output_format = match wait::OutputFormat::from_str(fmt) {
-                                Ok(f) => f,
-                                Err(e) => {
-                                    error!("Invalid output format: {e}");
-                                    process::exit(exitcode::USAGE);
-                                }
-                            };
+                        if let Some(fmt) = output { opts.output_format = (*fmt).clone().into(); }
+                        opts.use_webhook = *webhook;
+                        opts.webhook_port = *webhook_port;
+                        opts.webhook_secret = webhook_secret.clone();
+                        opts.follow_logs = *follow_logs;
+
+                        if opts.use_webhook && opts.webhook_secret.is_none() {
+                            error!("--webhook requires --webhook-secret (or GITHUB_WEBHOOK_SECRET)");
+                            process::exit(exitcode::USAGE);
                         }
+
+                        let log_task = if opts.follow_logs {
+                            let repo_for_logs = repo.clone();
+                            let token_for_logs = auth.token.clone();
+                            let interval_ms = opts.poll_interval_ms;
+                            Some(tokio::spawn(async move {
+                                logs::stream_logs(
+                                    &repo_for_logs,
+                                    run_id,
+                                    &token_for_logs,
+                                    interval_ms,
+                                )
+                                .await
+                            }))
+                        } else {
+                            None
+                        };
 
                         match wait::wait_for_run(&repo, run_id, &auth.token, &opts).await {
                             Err(e) => {
+                                if let Some(handle) = log_task {
+                                    handle.abort();
+                                }
                                 error!("Failed to wait for run: {e}");
                                 process::exit(exitcode::SOFTWARE);
                             }
                             Ok(run) => {
+                                if let Some(handle) = log_task {
+                                    handle.abort();
+                                }
                                 let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(wait::WorkflowRunConclusion::Neutral);
                                 match opts.output_format {
                                     wait::OutputFormat::Human => {
@@ -351,7 +433,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::Wait { repo, run_id, token, timeout, poll_interval, output }) => {
+        Some(Commands::Wait { repo, run_id, token, timeout, poll_interval, output, webhook, webhook_port, webhook_secret, follow_logs }) => {
             // Resolve authentication
             let auth = match auth::GithubAuth::resolve(token.clone()) {
                 Err(e) => {
@@ -365,23 +447,48 @@ async fn main() -> anyhow::Result<()> {
             let mut opts = wait::WaitOptions::default();
             if let Some(t) = timeout { opts.timeout_secs = *t; }
             if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
-            if let Some(fmt) = output {
-                opts.output_format = match wait::OutputFormat::from_str(fmt) {
-                    Ok(f) => f,
-                    Err(e) => {
-                        error!("Invalid output format: {e}");
-                        process::exit(exitcode::USAGE);
-                    }
-                };
+            if let Some(fmt) = output { opts.output_format = (*fmt).clone().into(); }
+            opts.use_webhook = *webhook;
+            opts.webhook_port = *webhook_port;
+            opts.webhook_secret = webhook_secret.clone();
+            opts.follow_logs = *follow_logs;
+
+            if opts.use_webhook && opts.webhook_secret.is_none() {
+                error!("--webhook requires --webhook-secret (or GITHUB_WEBHOOK_SECRET)");
+                process::exit(exitcode::USAGE);
             }
+
+            let log_task = if opts.follow_logs {
+                let repo_for_logs = repo.clone();
+                let token_for_logs = auth.token.clone();
+                let run_id_for_logs = *run_id;
+                let interval_ms = opts.poll_interval_ms;
+                Some(tokio::spawn(async move {
+                    logs::stream_logs(
+                        &repo_for_logs,
+                        run_id_for_logs,
+                        &token_for_logs,
+                        interval_ms,
+                    )
+                    .await
+                }))
+            } else {
+                None
+            };
 
             // Wait for the run
             match wait::wait_for_run(repo, *run_id, &auth.token, &opts).await {
                 Err(e) => {
+                    if let Some(handle) = log_task {
+                        handle.abort();
+                    }
                     error!("Failed to wait for run: {e}");
                     process::exit(exitcode::SOFTWARE);
                 }
                 Ok(run) => {
+                    if let Some(handle) = log_task {
+                        handle.abort();
+                    }
                     let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(wait::WorkflowRunConclusion::Neutral);
                     match opts.output_format {
                         wait::OutputFormat::Human => {
@@ -415,18 +522,29 @@ async fn main() -> anyhow::Result<()> {
                 Ok(auth) => auth,
             };
 
-            match tokio::runtime::Handle::current().block_on(artifacts::download_artifacts(
+            match artifacts::download_artifacts(
                 repo,
                 *run_id,
                 &auth.token,
                 output_dir,
                 filter.as_deref(),
-            )) {
-                Err(e) => {
+            ).await {
+                Err(artifacts::ArtifactError::NoArtifacts(_)) => {
+                    error!("No artifacts matched the request");
+                    process::exit(exitcode::DATAERR);
+                }
+                Err(artifacts::ArtifactError::Download(e)) => {
+                    error!("Failed to download artifacts: {e}");
+                    process::exit(exitcode::DATAERR);
+                }
+                Err(artifacts::ArtifactError::Api(e)) => {
                     error!("Failed to download artifacts: {e}");
                     process::exit(exitcode::SOFTWARE);
                 }
-                Ok(_) => exitcode::OK,
+                Ok(summary) => {
+                    info!("Downloaded {} artifact(s)", summary.downloaded);
+                    exitcode::OK
+                }
             }
         }
 

@@ -152,6 +152,14 @@ gha run [OPTIONS] <WORKFLOW> [ARG]...
 | `-b`, `--ref <REF>` | Branch, tag, or SHA. Auto-detected from current branch / HEAD if omitted. |
 | `--token <TOKEN>` | GitHub token (overrides `GITHUB_TOKEN` env and `~/.netrc`) |
 | `--base-dir <DIR>` | Directory used for git-based auto-detection (default: `.`) |
+| `--wait` | Wait for the run to finish and exit with conclusion-specific code |
+| `--timeout <SECONDS>` | Max wait duration (default: `3600`) |
+| `--poll-interval <MS>` | Polling cadence for API checks/logs (default: `500`) |
+| `--output <human\|json>` | Final result format (default: `human`) |
+| `--webhook` | Wait via local webhook listener instead of polling |
+| `--webhook-port <PORT>` | Local webhook bind port (default: `3456`) |
+| `--webhook-secret <SECRET>` | HMAC secret (or `GITHUB_WEBHOOK_SECRET`) for webhook validation |
+| `--follow-logs` | Stream logs to stdout while waiting (`--wait` required) |
 
 **Examples:**
 
@@ -176,8 +184,14 @@ gha run ci.yml
 # Wait for the workflow to complete
 gha run deploy.yml --wait environment=prod
 
-# Wait with custom polling (will exit with non-zero if workflow fails)
-gha run deploy.yml --wait --repo myorg/myrepo -b main
+# Wait with custom polling and JSON output
+gha run deploy.yml --wait --poll-interval 1000 --output json --repo myorg/myrepo -b main
+
+# Wait via webhook listener (requires webhook setup in GitHub settings)
+gha run deploy.yml --wait --webhook --webhook-secret "$GITHUB_WEBHOOK_SECRET"
+
+# Stream logs while waiting
+gha run deploy.yml --wait --follow-logs environment=prod
 ```
 
 **Input argument format:**
@@ -213,6 +227,13 @@ gha wait [OPTIONS] --repo <owner/repo> <RUN_ID>
 | `<RUN_ID>` | Workflow run ID (required, positional) |
 | `--repo <owner/repo>` | GitHub repository (required) |
 | `--token <TOKEN>` | GitHub token (overrides `GITHUB_TOKEN` env and `~/.netrc`) |
+| `--timeout <SECONDS>` | Max wait duration (default: `3600`) |
+| `--poll-interval <MS>` | Polling cadence (default: `500`) |
+| `--output <human\|json>` | Final output format (default: `human`) |
+| `--webhook` | Wait via local webhook listener instead of polling |
+| `--webhook-port <PORT>` | Local webhook bind port (default: `3456`) |
+| `--webhook-secret <SECRET>` | HMAC secret (or `GITHUB_WEBHOOK_SECRET`) for webhook validation |
+| `--follow-logs` | Stream logs to stdout while waiting |
 
 **Examples:**
 
@@ -222,6 +243,12 @@ gha wait --repo myorg/myrepo 12345678
 
 # With explicit authentication
 gha wait --repo myorg/myrepo 12345678 --token ghp_xxxx
+
+# Parse final state in scripts
+gha wait --repo myorg/myrepo 12345678 --output json | jq '.conclusion'
+
+# Wait via webhook mode
+gha wait --repo myorg/myrepo 12345678 --webhook --webhook-secret "$GITHUB_WEBHOOK_SECRET"
 
 # Common exit codes:
 #   0  -> success
@@ -233,6 +260,39 @@ Exit codes:
 - `0` — Success or Skipped
 - `65` — Failure or Action Required
 - `75` — Canceled or Timed Out
+
+---
+
+### `artifacts`
+
+Alias: `art`
+
+Downloads and extracts artifacts from a completed workflow run.
+
+```
+gha artifacts [OPTIONS] --repo <owner/repo> <RUN_ID>
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--repo <owner/repo>` | GitHub repository | required |
+| `<RUN_ID>` | Workflow run ID | required |
+| `--token <TOKEN>` | GitHub token override | auth chain |
+| `--output-dir <PATH>` | Extraction directory | `./gha-artifacts` |
+| `--filter <PATTERN>` | Glob-style artifact name filter (e.g. `test-*`) | all |
+
+**Examples:**
+
+```bash
+gha artifacts --repo myorg/myrepo 123456
+gha artifacts --repo myorg/myrepo 123456 --output-dir ./outputs
+gha artifacts --repo myorg/myrepo 123456 --filter "test-*"
+```
+
+Artifact exit codes:
+- `0` — one or more artifacts downloaded
+- `65` — no matching artifacts found or artifact download/extract failed
+- `70` — API/auth failure
 
 ---
 

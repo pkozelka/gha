@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde_json::{json, Value};
 use std::time::Duration;
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Options for waiting for a workflow run
 #[derive(Debug, Clone)]
@@ -12,6 +12,14 @@ pub struct WaitOptions {
     pub poll_interval_ms: u64,
     /// Output format: "human" or "json"
     pub output_format: OutputFormat,
+    /// Use webhook listener instead of polling GitHub API
+    pub use_webhook: bool,
+    /// Local port to bind webhook listener on when webhook mode is enabled
+    pub webhook_port: u16,
+    /// Webhook secret used for HMAC signature verification
+    pub webhook_secret: Option<String>,
+    /// Stream run logs while waiting
+    pub follow_logs: bool,
 }
 
 impl Default for WaitOptions {
@@ -20,6 +28,10 @@ impl Default for WaitOptions {
             timeout_secs: 3600,
             poll_interval_ms: 500,
             output_format: OutputFormat::Human,
+            use_webhook: false,
+            webhook_port: 3456,
+            webhook_secret: None,
+            follow_logs: false,
         }
     }
 }
@@ -28,16 +40,6 @@ impl Default for WaitOptions {
 pub enum OutputFormat {
     Human,
     Json,
-}
-
-impl OutputFormat {
-    pub fn from_str(s: &str) -> Result<Self> {
-        match s.to_lowercase().as_str() {
-            "human" => Ok(Self::Human),
-            "json" => Ok(Self::Json),
-            _ => Err(anyhow::anyhow!("Invalid output format: {}. Use 'human' or 'json'", s)),
-        }
-    }
 }
 
 /// ...existing code...
@@ -193,11 +195,27 @@ pub async fn wait_for_run(
     auth_token: &str,
     options: &WaitOptions,
 ) -> Result<WorkflowRun> {
+    if options.use_webhook {
+        let secret = options
+            .webhook_secret
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("webhook mode requires a webhook secret"))?;
+        return crate::webhook::wait_for_run_via_webhook(
+            repo,
+            run_id,
+            options.timeout_secs,
+            options.webhook_port,
+            secret,
+        )
+        .await;
+    }
+
     let url = format!("https://api.github.com/repos/{}/actions/runs/{}", repo, run_id);
     let client = reqwest::Client::new();
 
     let mut poll_count = 0;
-    let max_polls = (options.timeout_secs * 1000) / options.poll_interval_ms;
+    let poll_interval_ms = options.poll_interval_ms.max(1);
+    let max_polls = ((options.timeout_secs * 1000) / poll_interval_ms).max(1);
 
     loop {
         poll_count += 1;
@@ -255,11 +273,11 @@ pub async fn wait_for_run(
             }
             WorkflowRunStatus::Queued => {
                 debug!("Run is queued, waiting...");
-                tokio::time::sleep(Duration::from_millis(options.poll_interval_ms)).await;
+                tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
             }
             WorkflowRunStatus::InProgress => {
                 debug!("Run is in progress, waiting...");
-                tokio::time::sleep(Duration::from_millis(options.poll_interval_ms)).await;
+                tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
             }
         }
     }

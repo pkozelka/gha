@@ -33,18 +33,18 @@ Implement `--timeout`, `--poll-interval`, and `--output json/human` options for 
 - [x] Add `WorkflowRun::to_json()` method
 
 ### Changes to src/main.rs
-- [ ] Add `--timeout <SECS>` flag to both Run and Wait commands
-- [ ] Add `--poll-interval <MS>` flag to both Run and Wait commands  
-- [ ] Add `--output <FORMAT>` flag to both Run and Wait commands
-- [ ] Parse these flags and build `WaitOptions` struct
-- [ ] Pass options to `wait_for_run()` calls
-- [ ] Output JSON before exit if `output_format == Json`
+- [x] Add `--timeout <SECS>` flag to both Run and Wait commands
+- [x] Add `--poll-interval <MS>` flag to both Run and Wait commands  
+- [x] Add `--output <FORMAT>` flag to both Run and Wait commands
+- [x] Parse these flags and build `WaitOptions` struct
+- [x] Pass options to `wait_for_run()` calls
+- [x] Output JSON before exit if `output_format == Json`
 
 ### Test Coverage
 - [ ] Test timeout (mock slow API responses)
 - [ ] Test custom poll interval
-- [ ] Test JSON output format parsing
-- [ ] Test output format validation
+- [x] Test JSON output format parsing
+- [x] Test output format validation
 
 ## Exit Codes
 Exit codes remain unchanged - derived from `WorkflowRunConclusion` enum, not affected by output format.
