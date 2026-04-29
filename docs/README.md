@@ -11,12 +11,12 @@ This directory contains user documentation for `gha`.
 
 ## Concepts
 
-- `concepts/run-vs-wait.md` - async vs sync execution model
+- `concepts/spawn-vs-await.md` - async vs sync execution model
 - `concepts/workflow-inputs.md` - how workflow inputs are passed
 
 ## Features
 
-- `features/webhook-wait.md` - event-driven waiting with `--webhook`
+- `features/webhook-await.md` - event-driven awaiting with `--webhook`
 - `features/live-log-streaming.md` - `--follow-logs` behavior
 - `features/artifacts.md` - download and extract run artifacts
 - `features/makefile-client.md` - generate and use workflow Makefile clients

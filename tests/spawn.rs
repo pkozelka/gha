@@ -2,19 +2,19 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 #[test]
-fn run_command_shows_help() {
+fn spawn_command_shows_help() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
-    cmd.args(&["run", "--help"])
+    cmd.args(&["spawn", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Run a GitHub Actions workflow"));
+        .stdout(predicate::str::contains("Spawn a GitHub Actions workflow"));
 }
 
 #[test]
-fn run_command_validates_inputs() {
+fn spawn_command_validates_inputs() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
     cmd.args(&[
-        "run",
+        "spawn",
         "test.yml",
         "--repo",
         "owner/repo",
@@ -30,18 +30,18 @@ fn run_command_validates_inputs() {
 }
 
 #[test]
-fn run_command_requires_workflow() {
+fn spawn_command_requires_workflow() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
-    cmd.args(&["run"])
+    cmd.args(&["spawn"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("required").or(predicate::str::contains("WORKFLOW")));
 }
 
 #[test]
-fn run_command_help_shows_positional_workflow() {
+fn spawn_command_help_shows_positional_workflow() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
-    cmd.args(&["run", "--help"])
+    cmd.args(&["spawn", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("<WORKFLOW>"))
@@ -54,10 +54,10 @@ fn run_command_help_shows_positional_workflow() {
 }
 
 #[test]
-fn run_command_rejects_follow_logs_without_wait() {
+fn spawn_command_rejects_follow_logs_without_await() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
     cmd.args(&[
-        "run",
+        "spawn",
         "test.yml",
         "--repo",
         "owner/repo",
@@ -69,7 +69,7 @@ fn run_command_rejects_follow_logs_without_wait() {
     ])
     .assert()
     .failure()
-    .stderr(predicate::str::contains("requires --wait"));
+    .stderr(predicate::str::contains("requires --await"));
 }
 
 

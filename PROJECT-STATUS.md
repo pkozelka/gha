@@ -4,8 +4,8 @@
 
 `gha` now implements Tasks 1 through 6 from `tasks-*.md`, including:
 
-- direct workflow execution (`gha run`)
-- synchronous waiting and standalone waiting (`gha run --wait`, `gha wait`)
+- direct workflow execution (`gha spawn`)
+- synchronous waiting and standalone waiting (`gha spawn --await`, `gha await`)
 - configurable wait behavior (`--timeout`, `--poll-interval`, `--output`)
 - artifact downloads (`gha artifacts`)
 - webhook-based waiting (`--webhook`, `--webhook-port`, `--webhook-secret`)
@@ -14,8 +14,8 @@
 
 ## Current Command Surface
 
-- `gha run [OPTIONS] <WORKFLOW> [ARG]...`
-- `gha wait [OPTIONS] --repo <owner/repo> <RUN_ID>`
+- `gha spawn [OPTIONS] <WORKFLOW> [ARG]...`
+- `gha await [OPTIONS] --repo <owner/repo> <RUN_ID>`
 - `gha artifacts [OPTIONS] --repo <owner/repo> <RUN_ID>`
 - `gha gen-workflow-client [OPTIONS]`
 - `gha workflow-dispatch [OPTIONS] --token <TOKEN>`
@@ -31,7 +31,7 @@
 ## Validation Snapshot
 
 - `cargo test` passes in the current workspace state.
-- Integration tests cover core CLI surfaces for `run` and `wait` option/help behavior.
+- Integration tests cover core CLI surfaces for `spawn` and `await` option/help behavior.
 - Unit tests cover parsing/auth/completion/wait logic.
 
 ## Design Notes

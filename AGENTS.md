@@ -18,7 +18,7 @@
 
 ## Repo-specific conventions
 - `.env` loading is automatic and happens before CLI parsing: `load_env_file()` walks upward from the current directory until `$HOME` / filesystem root and loads the first `.env` it finds.
-- Logging goes to stderr via `tracing_subscriber`; `-v` enables debug and `-vv` enables trace. Keep stdout clean for commands that intentionally print machine-usable output (`--mode curl`, `--mode make`, `run`).
+- Logging goes to stderr via `tracing_subscriber`; `-v` enables debug and `-vv` enables trace. Keep stdout clean for commands that intentionally print machine-usable output (`--mode curl`, `--mode make`, `spawn`).
 - `main()` uses `anyhow` for errors but converts outcomes into explicit `exitcode::*` values with `process::exit`; follow that pattern instead of letting user-facing command failures panic.
 - Workflow inputs are passed as repeated `--arg` values in `name=value` or `name=@file` form; `@file` embeds file contents as a string in the JSON payload.
 - In `gen_client.rs`, an input counts as required only when YAML says `required: true` **and** there is no default (`is_required = required && default.is_none()`).
@@ -29,7 +29,7 @@
 - `src/gen_client.rs`: workflow parsing, render model, Handlebars integration
 - `src/template.Makefile`: source-of-truth template for generated clients
 - `workflow_dispatch.Makefile`: checked-in example of generated client structure and runtime flow
-- `tests/cli.rs`: expected CLI surface (`--help`, `run`, missing-command failure)
+- `tests/cli.rs`: expected CLI surface (`--help`, `spawn`, missing-command failure)
 - `tests/reproduce_issue.rs`: YAML parsing edge cases the project explicitly cares about
 - `tests/empty.yml`: minimal `workflow_dispatch` fixture used by parser tests
 

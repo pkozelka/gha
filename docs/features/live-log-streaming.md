@@ -1,31 +1,31 @@
 # Feature: Live Log Streaming
 
-Live log streaming prints run logs while waiting.
+Live log streaming prints run logs while awaiting completion.
 
 ## Key Rules
 
 - enable with `--follow-logs`
-- for `run`, `--follow-logs` requires `--wait`
-- works with both polling wait and webhook wait
+- for `spawn`, `--follow-logs` requires `--await`
+- works with both polling await and webhook await
 
 ## Examples
 
-Run and stream logs:
+Spawn and stream logs:
 
 ```bash
-gha run deploy.yml --wait --follow-logs --repo myorg/myrepo -b main
+gha spawn deploy.yml --await --follow-logs --repo myorg/myrepo -b main
 ```
 
-Wait existing run and stream logs:
+Await an existing run and stream logs:
 
 ```bash
-gha wait --repo myorg/myrepo 123456789 --follow-logs
+gha await --repo myorg/myrepo 123456789 --follow-logs
 ```
 
 Stream logs with custom poll interval:
 
 ```bash
-gha wait --repo myorg/myrepo 123456789 --follow-logs --poll-interval 1000
+gha await --repo myorg/myrepo 123456789 --follow-logs --poll-interval 1000
 ```
 
 ## Output Style

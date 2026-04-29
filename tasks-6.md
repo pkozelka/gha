@@ -4,14 +4,14 @@ Stream workflow logs in real-time as the job executes.
 
 ## Overview
 
-Instead of waiting silently for a workflow to complete, stream the logs to stdout as they're generated. This provides real-time feedback to the user running `gha run --wait --follow-logs`.
+Instead of waiting silently for a workflow to complete, stream the logs to stdout as they're generated. This provides real-time feedback to the user running `gha spawn --await --follow-logs`.
 
 ## Requirements
 
 1. **New `--follow-logs` flag**
-   - `gha run ci.yml --wait --follow-logs`
-   - `gha wait --repo o/r 123456 --follow-logs`
-   - Only applicable with `--wait` (synchronous mode)
+   - `gha spawn ci.yml --await --follow-logs`
+   - `gha await --repo o/r 123456 --follow-logs`
+   - Only applicable with `--await` (synchronous mode)
    - Requires `--timeout` to be set appropriately
 
 2. **Log fetching**
@@ -27,7 +27,7 @@ Instead of waiting silently for a workflow to complete, stream the logs to stdou
    - Show progress: `[step 1/5]`, etc.
 
 4. **Integration with wait**
-   - `wait_for_run()` continues polling for completion
+   - `await_run()` continues polling for completion
    - Parallel task streams logs
    - Both complete simultaneously
    - Exit code determined by final conclusion (as usual)

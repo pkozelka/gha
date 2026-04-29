@@ -58,14 +58,14 @@ pub async fn start_webhook_server(
     Ok((event_rx, shutdown_tx))
 }
 
-/// Wait for a specific workflow run to complete via webhook
-pub async fn wait_for_run_via_webhook(
+/// Await a specific workflow run to complete via webhook
+pub async fn await_run_via_webhook(
     _repo: &str,
     run_id: u64,
     timeout_secs: u64,
     port: u16,
     secret: &str,
-) -> Result<crate::wait::WorkflowRun> {
+) -> Result<crate::awaiting::WorkflowRun> {
     let (event_rx, shutdown_tx) = start_webhook_server(port, run_id, secret.to_string()).await?;
 
     let event = match tokio::time::timeout(
@@ -80,7 +80,7 @@ pub async fn wait_for_run_via_webhook(
     };
 
     let _ = shutdown_tx.send(());
-    crate::wait::WorkflowRun::from_api_response(&event)
+    crate::awaiting::WorkflowRun::from_api_response(&event)
 }
 
 async fn handle_webhook(
@@ -125,7 +125,7 @@ async fn handle_webhook(
     };
 
     if run_id != state.run_id {
-        debug!("Ignoring webhook for run {} while waiting for {}", run_id, state.run_id);
+        debug!("Ignoring webhook for run {} while awaiting {}", run_id, state.run_id);
         return (StatusCode::ACCEPTED, "run id mismatch");
     }
 

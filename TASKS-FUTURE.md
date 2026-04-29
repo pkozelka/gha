@@ -14,9 +14,9 @@ All four tasks have been fully planned and documented. The infrastructure founda
 **Status**: Foundation complete, awaiting CLI flag additions
 
 ### What's already done
-- `WaitOptions` struct with `timeout_secs`, `poll_interval_ms`, `output_format` fields
+- `AwaitOptions` struct with `timeout_secs`, `poll_interval_ms`, `output_format` fields
 - `OutputFormat` enum (Human, Json)
-- `wait_for_run()` updated to accept `&WaitOptions`
+- `await_run()` updated to accept `&AwaitOptions`
 - `WorkflowRun::to_json()` serialization method
 - Default implementations and validation
 
@@ -24,14 +24,14 @@ All four tasks have been fully planned and documented. The infrastructure founda
 - Add `--timeout <SECS>` U64 arg to Run and Wait commands
 - Add `--poll-interval <MS>` U64 arg to Run and Wait commands
 - Add `--output <FORMAT>` flag to Run and Wait commands
-- Update command handlers to build `WaitOptions` struct from CLI args
+- Update command handlers to build `AwaitOptions` struct from CLI args
 - Output JSON before exit if `output_format == Json`
 - Tests for timeout behavior, intervals, and JSON output
 
 ### Example: After Task 3 completion
 ```bash
-gha run ci.yml --wait --timeout 600 --output json | jq '.conclusion'
-gha wait --repo myorg/repo 12345 --poll-interval 100 --output json
+gha spawn ci.yml --await --timeout 600 --output json | jq '.conclusion'
+gha await --repo myorg/repo 12345 --poll-interval 100 --output json
 ```
 
 ---
@@ -56,14 +56,14 @@ gha artifacts --repo owner/repo RUN_ID [--output-dir DIR] [--filter PATTERN]
 ### Why separate from wait?
 - Can be used independently (don't need to wait for completion first)
 - Artifact download is a distinct operation
-- Users might wait for run via `gha wait`, then later download artifacts
+- Users might wait for run via `gha await`, then later download artifacts
 
 ---
 
 ## Task 5: Webhook-Based Waiting ✓ FULLY PLANNED
 
 **Documentation**: `tasks-5.md`  
-**Branch**: `feature/webhook-wait`  
+**Branch**: `feature/webhook-await`  
 **Status**: Complete specification, no implementation yet
 
 ### Key insight
@@ -84,7 +84,7 @@ Polling every 500ms hits rate limits on large-scale deployments. Webhooks are ev
 
 ### Example: After Task 5 completion
 ```bash
-gha run ci.yml --wait --webhook    # Uses event-driven waiting instead of polling
+gha spawn ci.yml --await --webhook    # Uses event-driven waiting instead of polling
 ```
 
 ---
@@ -96,11 +96,11 @@ gha run ci.yml --wait --webhook    # Uses event-driven waiting instead of pollin
 **Status**: Complete specification, no implementation yet
 
 ### Key insight
-Users running `gha run --wait` sit in silence. Streaming logs provides real-time feedback and better UX for long-running workflows.
+Users running `gha spawn --await` sit in silence. Streaming logs provides real-time feedback and better UX for long-running workflows.
 
 ### Scope
 - New module `src/logs.rs`
-- `--follow-logs` flag (requires `--wait`)
+- `--follow-logs` flag (requires `--await`)
 - Fetch job/step logs from GitHub API as they execute
 - Color-code and timestamp output
 - Show progress indicators
@@ -113,7 +113,7 @@ Users running `gha run --wait` sit in silence. Streaming logs provides real-time
 
 ### Example: After Task 6 completion
 ```bash
-gha run deploy.yml --wait --follow-logs    # See logs in real-time
+gha spawn deploy.yml --await --follow-logs    # See logs in real-time
 ```
 
 ---
@@ -130,7 +130,7 @@ gha run deploy.yml --wait --follow-logs    # See logs in real-time
    - Can be completely independent
    - Good for post-workflow operations
 
-3. **Task 5** (feature/webhook-wait branch):
+3. **Task 5** (feature/webhook-await branch):
    - Advanced, optional optimization
    - Can be worked on after Tasks 3-4 stabilize
    - Only needed for scale/efficiency
@@ -145,7 +145,7 @@ gha run deploy.yml --wait --follow-logs    # See logs in real-time
 ## Test Plan
 
 ### Task 3
-- Unit tests for `WaitOptions` parsing
+- Unit tests for `AwaitOptions` parsing
 - Integration tests for timeout behavior
 - JSON format validation tests
 
@@ -174,7 +174,7 @@ gha run deploy.yml --wait --follow-logs    # See logs in real-time
 
 ### Task 3
 - `tasks-3.md` (requirements and implementation guide)
-- Modified `src/wait.rs` (already done ✓)
+- Modified `src/awaiting.rs` (already done ✓)
 - Will modify: `src/main.rs` (add flags)
 
 ### Task 4
@@ -184,8 +184,8 @@ gha run deploy.yml --wait --follow-logs    # See logs in real-time
 
 ### Task 5
 - `tasks-5.md` (requirements and implementation guide)
-- Will create (on feature/webhook-wait): `src/webhook.rs`
-- Will modify: `src/wait.rs` (webhook option in WaitOptions)
+- Will create (on feature/webhook-await): `src/webhook.rs`
+- Will modify: `src/awaiting.rs` (webhook option in AwaitOptions)
 
 ### Task 6
 - `tasks-6.md` (requirements and implementation guide)

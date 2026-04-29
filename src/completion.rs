@@ -72,7 +72,7 @@ fn build_zsh_dynamic_helpers(workflows_dir: &Path) -> String {
 
     let mut out = String::new();
     out.push_str("\n# --- gha dynamic workflow input completions ---\n");
-    out.push_str("_gha_run_args() {\n");
+    out.push_str("_gha_spawn_args() {\n");
     out.push_str("  local -A _gha_choices\n");
     for (input_name, options) in &choices {
         let values = options
@@ -96,10 +96,10 @@ fn build_zsh_dynamic_helpers(workflows_dir: &Path) -> String {
     compadd -S '=' -- $keys
   fi
 }
-# Override the generated _gha__run function's argument completion
-(( $+functions[_gha__run] )) && {
-  local _orig_gha_run=$(typeset -f _gha__run)
-  eval "${_orig_gha_run/# *state=ARG*/_gha_run_args; return}"
+# Override the generated _gha__spawn function's argument completion
+(( $+functions[_gha__spawn] )) && {
+  local _orig_gha_spawn=$(typeset -f _gha__spawn)
+  eval "${_orig_gha_spawn/# *state=ARG*/_gha_spawn_args; return}"
 }
 "#,
     );
@@ -115,7 +115,7 @@ fn build_bash_dynamic_helpers(workflows_dir: &Path) -> String {
 
     let mut out = String::new();
     out.push_str("\n# --- gha dynamic workflow input completions ---\n");
-    out.push_str("_gha_run_args_complete() {\n");
+    out.push_str("_gha_spawn_args_complete() {\n");
     out.push_str("  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n");
     out.push_str("  local key=\"${cur%%=*}\"\n");
     out.push_str("  case \"$key\" in\n");
@@ -138,7 +138,7 @@ fn build_bash_dynamic_helpers(workflows_dir: &Path) -> String {
     out.push_str("}\n");
     // Patch the generated _gha function to call our helper for trailing args
     out.push_str(
-        r#"# Augment generated completion to use dynamic input helpers for 'run' ARG positions
+        r#"# Augment generated completion to use dynamic input helpers for 'spawn' ARG positions
 _gha_orig_complete="${_gha}"
 complete -F _gha gha
 "#,
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn zsh_helper_contains_choice_values() {
         let result = build_zsh_dynamic_helpers(Path::new("tests"));
-        assert!(result.contains("_gha_run_args"), "should define _gha_run_args function");
+        assert!(result.contains("_gha_spawn_args"), "should define _gha_spawn_args function");
         assert!(result.contains("environment"), "should include choice input name");
         assert!(result.contains("'dev'"), "should include choice option value");
         assert!(result.contains("'staging'"), "should include choice option value");
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn bash_helper_contains_choice_values() {
         let result = build_bash_dynamic_helpers(Path::new("tests"));
-        assert!(result.contains("_gha_run_args_complete"), "should define completion function");
+        assert!(result.contains("_gha_spawn_args_complete"), "should define completion function");
         assert!(result.contains("environment"), "should include choice input name");
         assert!(result.contains("\"dev\""), "should include choice option value");
         assert!(result.contains("\"staging\""), "should include choice option value");

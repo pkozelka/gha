@@ -4,7 +4,7 @@
 
 It supports:
 
-- direct workflow dispatch and waiting (`run`, `wait`)
+- direct workflow dispatch and awaiting (`spawn`, `await`)
 - artifact download (`artifacts`)
 - generated Makefile clients for `workflow_dispatch` workflows (`gen`)
 - shell completion generation (`completion`)
@@ -20,9 +20,9 @@ Detailed guides are under `docs/`:
 
 Feature and concept guides:
 
-- `docs/concepts/run-vs-wait.md`
+- `docs/concepts/spawn-vs-await.md`
 - `docs/concepts/workflow-inputs.md`
-- `docs/features/webhook-wait.md`
+- `docs/features/webhook-await.md`
 - `docs/features/live-log-streaming.md`
 - `docs/features/artifacts.md`
 - `docs/features/makefile-client.md`
@@ -33,6 +33,6 @@ Feature and concept guides:
 ```bash
 cargo install --path .
 export GITHUB_TOKEN=ghp_xxxx
-gha run deploy.yml --wait environment=staging
+gha spawn deploy.yml --await environment=staging
 ```
 

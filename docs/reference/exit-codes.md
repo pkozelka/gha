@@ -15,7 +15,7 @@
 Treat canceled as retryable:
 
 ```bash
-gha wait --repo myorg/myrepo 123456789
+gha await --repo myorg/myrepo 123456789
 code=$?
 if [ "$code" -eq 75 ]; then
   echo "Retrying after cancellation/timeout"
@@ -25,7 +25,7 @@ fi
 Fail fast on permanent failures:
 
 ```bash
-gha run deploy.yml --wait --repo myorg/myrepo -b main
+gha spawn deploy.yml --await --repo myorg/myrepo -b main
 code=$?
 if [ "$code" -eq 65 ]; then
   echo "Workflow failed"

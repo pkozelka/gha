@@ -3,7 +3,7 @@
 
 Currently, executing `gha gen` creates a Makefile which allows the user to run the workflow.
 
-Now we want to make it so that the user can run the workflow directly, using a command like `gha run <workflow-name> -b <branch> arg1=val1 arg2=val2...`.
+Now we want to make it so that the user can run the workflow directly, using a command like `gha spawn <workflow-name> -b <branch> arg1=val1 arg2=val2...`.
 
 The implementation should ensure that:
 - contents of all HTTP requests and responses are properly logged at debug level

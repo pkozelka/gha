@@ -1,9 +1,9 @@
 # Command Reference
 
-## `run` (`r`)
+## `spawn` (`s`)
 
 ```bash
-gha run [OPTIONS] <WORKFLOW> [ARG]...
+gha spawn [OPTIONS] <WORKFLOW> [ARG]...
 ```
 
 Key flags:
@@ -11,20 +11,20 @@ Key flags:
 - `--repo <owner/repo>`
 - `-b, --ref <REF>`
 - `--token <TOKEN>`
-- `--wait`
+- `--await`
 - `--timeout <SECONDS>`
 - `--poll-interval <MS>`
 - `--output human|json`
 - `--webhook`, `--webhook-port`, `--webhook-secret`
-- `--follow-logs` (requires `--wait`)
+- `--follow-logs` (requires `--await`)
 
-## `wait` (`w`)
+## `await` (`a`)
 
 ```bash
-gha wait [OPTIONS] --repo <owner/repo> <RUN_ID>
+gha await [OPTIONS] --repo <owner/repo> <RUN_ID>
 ```
 
-Key flags mirror wait-related `run` flags.
+Key flags mirror await-related `spawn` flags.
 
 ## `artifacts` (`art`)
 

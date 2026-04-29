@@ -1,6 +1,6 @@
-# Feature: Webhook Wait
+# Feature: Webhook Await
 
-Webhook wait mode avoids high-frequency polling by waiting for GitHub `workflow_run` webhook events.
+Webhook await mode avoids high-frequency polling by awaiting GitHub `workflow_run` webhook events.
 
 ## When to Use
 
@@ -18,22 +18,22 @@ Minimum requirements:
 
 ## Examples
 
-Wait an existing run via webhook:
+Await an existing run via webhook:
 
 ```bash
-gha wait --repo myorg/myrepo 123456789 --webhook --webhook-secret "$GITHUB_WEBHOOK_SECRET"
+gha await --repo myorg/myrepo 123456789 --webhook --webhook-secret "$GITHUB_WEBHOOK_SECRET"
 ```
 
-Dispatch and wait via webhook:
+Spawn and await via webhook:
 
 ```bash
-gha run deploy.yml --wait --repo myorg/myrepo -b main --webhook --webhook-secret "$GITHUB_WEBHOOK_SECRET"
+gha spawn deploy.yml --await --repo myorg/myrepo -b main --webhook --webhook-secret "$GITHUB_WEBHOOK_SECRET"
 ```
 
 Use custom local port:
 
 ```bash
-gha wait --repo myorg/myrepo 123456789 --webhook --webhook-port 4567 --webhook-secret "$GITHUB_WEBHOOK_SECRET"
+gha await --repo myorg/myrepo 123456789 --webhook --webhook-port 4567 --webhook-secret "$GITHUB_WEBHOOK_SECRET"
 ```
 
 ## Notes

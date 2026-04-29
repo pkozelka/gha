@@ -7,7 +7,7 @@ use crate::auth::GithubAuth;
 use crate::gen_client::{parse_workflow, WorkflowInfo};
 
 /// Dispatch a workflow directly via GitHub API
-pub async fn run_workflow(
+pub async fn spawn_workflow(
     repo: &str,
     workflow: &str,
     r#ref: &str,

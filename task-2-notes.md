@@ -2,13 +2,13 @@
 
 ## Overview
 
-Implemented synchronous and asynchronous workflow execution: `gha run --wait` to dispatch and wait, plus a standalone `gha wait` command to poll any previous run. Both share a reusable waiting/polling mechanism that includes proper exit codes reflecting workflow conclusion.
+Implemented synchronous and asynchronous workflow execution: `gha spawn --await` to dispatch and wait, plus a standalone `gha await` command to poll any previous run. Both share a reusable waiting/polling mechanism that includes proper exit codes reflecting workflow conclusion.
 
 ## Implementation Summary
 
-### New Module: `src/wait.rs`
+### New Module: `src/awaiting.rs`
 
-**Purpose**: Centralized polling and status management for workflow runs, used by both `run --wait` and standalone `wait`.
+**Purpose**: Centralized polling and status management for workflow runs, used by both `spawn --await` and standalone `await`.
 
 #### Key Types
 
@@ -51,7 +51,7 @@ pub struct WorkflowRun {
 
 #### Key Functions
 
-**`wait_for_run(repo, run_id, auth_token) -> WorkflowRun`**
+**`await_run(repo, run_id, auth_token) -> WorkflowRun`**
 - Polls `GET /repos/{repo}/actions/runs/{run_id}` every 0.5 seconds
 - Continues until status is `Completed`
 - Max 7200 polls (~1 hour timeout)
@@ -60,30 +60,30 @@ pub struct WorkflowRun {
 **`get_run_id_after_dispatch(repo, workflow, ref, auth_token) -> u64`**
 - GitHub dispatch API (POST `/dispatches`) returns 202 Accepted with no body
 - This function fetches the latest queued run for the workflow/ref combo
-- Used immediately after `run_workflow()` dispatch to get the ID for polling
+- Used immediately after `spawn_workflow()` dispatch to get the ID for polling
 - Queries `GET /repos/{repo}/actions/workflows/{workflow}/runs?branch={ref}&status=queued`
 
 ### Changes to `src/main.rs`
 
 #### New Commands
-- **`Run --wait`**: dispatches workflow + polls until completion
+- **`Run --await`**: dispatches workflow + polls until completion
 - **`Wait`**: standalone command to wait for a run by ID
 
-#### Run Command Signature
+#### Spawn Command Signature
 ```
-gha run [OPTIONS] <WORKFLOW> [ARG]...
-  --wait  : Poll and wait for completion instead of exiting immediately
+gha spawn [OPTIONS] <WORKFLOW> [ARG]...
+  --await  : Poll and wait for completion instead of exiting immediately
 ```
 
-When `--wait` is specified, after dispatching:
+When `--await` is specified, after dispatching:
 1. Call `get_run_id_after_dispatch()` to fetch the run ID from GitHub's run list
-2. Call `wait_for_run()` to poll until completion
+2. Call `await_run()` to poll until completion
 3. Log the final conclusion and GitHub UI URL at INFO level
 4. Exit with the appropriate code based on `WorkflowRunConclusion`
 
-#### Wait Command Signature
+#### Await Command Signature
 ```
-gha wait [OPTIONS] --repo <owner/repo> <RUN_ID>
+gha await [OPTIONS] --repo <owner/repo> <RUN_ID>
   --repo <owner/repo> : Required
   --token <TOKEN>     : Optional (resolves normally via --token, GITHUB_TOKEN, ~/.netrc)
 ```
@@ -107,23 +107,23 @@ Waits for an already-running workflow without the dispatch step.
 
 ```bash
 # Succeed
-$ gha run ci.yml --wait && echo "Done" || echo "Failed"
+$ gha spawn ci.yml --await && echo "Done" || echo "Failed"
 # Exit code 0 if workflow succeeded
 
 # Fail with DATAERR
-$ gha run ci.yml --wait
+$ gha spawn ci.yml --await
 # ... workflow fails ...
 # Exit code 65
 
 # Canceled
-$ gha run ci.yml --wait
+$ gha spawn ci.yml --await
 # ... user cancels via GitHub UI ...
 # Exit code 75
 ```
 
 ### Test Coverage
 
-- 4 unit tests in `src/wait.rs`:
+- 4 unit tests in `src/awaiting.rs`:
   - Conclusion parsing from API responses
   - Exit code distinctness
   - Display string generation
@@ -132,7 +132,7 @@ $ gha run ci.yml --wait
 
 ### Design Decisions
 
-1. **Shared Polling Logic**: Both `run --wait` and `wait` command reuse `wait_for_run()` to avoid duplication and ensure consistent behavior.
+1. **Shared Polling Logic**: Both `spawn --await` and `await` command reuse `await_run()` to avoid duplication and ensure consistent behavior.
 
 2. **Run ID Retrieval**: After dispatch returns 202, we fetch the run list filtered by status=queued rather than trying to extract from the response (which is empty). This is reliable because GitHub returns the most recent run first.
 
@@ -150,23 +150,23 @@ $ gha run ci.yml --wait
 
 ## Files Created
 
-- `src/wait.rs` — polling/status types and functions
+- `src/awaiting.rs` — polling/status types and functions
 
 ## Files Modified
 
-- `src/main.rs` — new `wait` command, `--wait` flag on `run`, auth/conclusion handling
-- `README.md` — documentation of `--wait`, `wait` command, exit codes, quick-start update
+- `src/main.rs` — new `await` command, `--await` flag on `spawn`, auth/conclusion handling
+- `README.md` — documentation of `--await`, `await` command, exit codes, quick-start update
 
 ## Commits
 
-1. Add Task 2: `--wait` flag and `gha wait` command with shared polling logic
-2. Update README with `--wait` and `gha wait` documentation
+1. Add Task 2: `--await` flag and `gha await` command with shared polling logic
+2. Update README with `--await` and `gha await` documentation
 
 ## Known Limitations
 
 1. **No Custom Timeout**: The 1-hour timeout is hardcoded. A future enhancement could add `--timeout` flag.
 
-2. **Polling is Synchronous**: The polling blocks the CLI process. For non-blocking dispatch + wait patterns, users should use `gha run <workflow>` (exit immediately) then `gha wait` later.
+2. **Polling is Synchronous**: The polling blocks the CLI process. For non-blocking dispatch + wait patterns, users should use `gha spawn <workflow>` (exit immediately) then `gha await` later.
 
 3. **No Rate Limiting**: We poll without respecting GitHub API rate limits. For high-frequency polling of many runs, this could hit rate limits. A future enhancement could implement exponential backoff or check rate limit headers.
 
@@ -176,23 +176,23 @@ $ gha run ci.yml --wait
 
 ```bash
 # Success: exit 0
-gha run ci.yml --wait && echo "Workflow succeeded 🎉"
+gha spawn ci.yml --await && echo "Workflow succeeded 🎉"
 
 # Failure: exit 65
-gha run ci.yml --wait || [ $? -eq 65 ] && echo "Workflow failed (permanent)"
+gha spawn ci.yml --await || [ $? -eq 65 ] && echo "Workflow failed (permanent)"
 
 # Canceled: exit 75
-gha run ci.yml --wait || [ $? -eq 75 ] && echo "Workflow canceled (retryable)"
+gha spawn ci.yml --await || [ $? -eq 75 ] && echo "Workflow canceled (retryable)"
 
 # Use in scripts
-if gha run deploy.yml --wait; then
+if gha spawn deploy.yml --await; then
   echo "Deployment successful"
 else
   exit_code=$?
   if [ $exit_code -eq 75 ]; then
     echo "Deployment was canceled, retrying..."
     sleep 60
-    gha run deploy.yml --wait
+    gha spawn deploy.yml --await
   else
     echo "Deployment failed (exit code: $exit_code)"
     exit $exit_code
@@ -207,5 +207,5 @@ fi
 3. **`--output json`**: Return run state as JSON for machine parsing
 4. **Webhook-based Waiting**: Use GitHub webhooks instead of polling (more efficient for long-running workflows)
 5. **Live Log Streaming**: Include `--follow-logs` to stream workflow logs as they execute
-6. **Artifact Download**: Auto-download artifacts when `--wait` completes
+6. **Artifact Download**: Auto-download artifacts when `--await` completes
 

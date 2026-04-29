@@ -16,6 +16,6 @@
 ## Validation
 
 - Routing and verification implemented in `src/webhook.rs`.
-- `wait::wait_for_run()` routes to webhook mode when enabled.
+- `awaiting::await_run()` routes to webhook mode when enabled.
 - Full `cargo test` passes.
 

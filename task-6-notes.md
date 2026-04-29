@@ -2,10 +2,10 @@
 
 ## Decisions
 
-- Log streaming is implemented as a background task started by `run --wait --follow-logs` and `wait --follow-logs`.
+- Log streaming is implemented as a background task started by `spawn --await --follow-logs` and `wait --follow-logs`.
 - Stream source is the GitHub run logs archive endpoint (`/actions/runs/{run_id}/logs`), diffed incrementally by file/line offsets.
 - Output includes timestamps and ANSI color tags per log file for readability.
-- `--follow-logs` is rejected without `--wait` for `run`.
+- `--follow-logs` is rejected without `--await` for `spawn`.
 
 ## Why
 
@@ -14,6 +14,6 @@
 
 ## Validation
 
-- Integration test added for `--follow-logs` usage guard (`tests/run.rs`).
+- Integration test added for `--follow-logs` usage guard (`tests/spawn.rs`).
 - Full `cargo test` passes.
 

@@ -6,10 +6,10 @@ use std::process;
 use std::fs;mod git_utils;
 mod github_utils;
 mod gen_client;
-mod run;
+mod spawn;
 mod auth;
 mod completion;
-mod wait;
+mod awaiting;
 mod artifacts;
 mod webhook;
 mod logs;
@@ -20,11 +20,11 @@ enum OutputArg {
     Json,
 }
 
-impl From<OutputArg> for wait::OutputFormat {
+impl From<OutputArg> for awaiting::OutputFormat {
     fn from(value: OutputArg) -> Self {
         match value {
-            OutputArg::Human => wait::OutputFormat::Human,
-            OutputArg::Json => wait::OutputFormat::Json,
+            OutputArg::Human => awaiting::OutputFormat::Human,
+            OutputArg::Json => awaiting::OutputFormat::Json,
         }
     }
 }
@@ -44,9 +44,9 @@ struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 enum Commands {
-    /// Run a GitHub Actions workflow directly
-    #[clap(alias = "r")]
-    Run {
+    /// Spawn a GitHub Actions workflow directly
+    #[clap(alias = "s")]
+    Spawn {
         /// Workflow file name or ID, e.g., "ci.yml"
         #[arg(value_name = "WORKFLOW")]
         workflow: String,
@@ -71,15 +71,15 @@ enum Commands {
         #[arg(value_name = "ARG", trailing_var_arg = true)]
         args: Vec<String>,
 
-        /// Wait for the workflow run to complete before exiting
-        #[arg(long)]
-        wait: bool,
+        /// Await workflow completion before exiting
+        #[arg(long = "await")]
+        r#await: bool,
 
-        /// Maximum time to wait in seconds (default: 3600 = 1 hour)
+        /// Maximum time to await in seconds (default: 3600 = 1 hour)
         #[arg(long)]
         timeout: Option<u64>,
 
-        /// Polling interval in milliseconds (default: 500)
+        /// Polling interval in milliseconds while awaiting (default: 500)
         #[arg(long)]
         poll_interval: Option<u64>,
 
@@ -87,7 +87,7 @@ enum Commands {
         #[arg(long, value_enum)]
         output: Option<OutputArg>,
 
-        /// Wait for completion via webhook listener instead of API polling
+        /// Await completion via webhook listener instead of API polling
         #[arg(long)]
         webhook: bool,
 
@@ -99,14 +99,14 @@ enum Commands {
         #[arg(long, env = "GITHUB_WEBHOOK_SECRET")]
         webhook_secret: Option<String>,
 
-        /// Stream logs while waiting for completion (requires --wait)
+        /// Stream logs while awaiting completion (requires --await)
         #[arg(long)]
         follow_logs: bool,
     },
 
-    /// Wait for a workflow run to complete
-    #[clap(alias = "w")]
-    Wait {
+    /// Await a workflow run to complete
+    #[clap(alias = "a")]
+    Await {
         /// GitHub repository in the form "owner/repo"
         #[arg(long)]
         repo: String,
@@ -119,11 +119,11 @@ enum Commands {
         #[arg(long)]
         token: Option<String>,
 
-        /// Maximum time to wait in seconds (default: 3600 = 1 hour)
+        /// Maximum time to await in seconds (default: 3600 = 1 hour)
         #[arg(long)]
         timeout: Option<u64>,
 
-        /// Polling interval in milliseconds (default: 500)
+        /// Polling interval in milliseconds while awaiting (default: 500)
         #[arg(long)]
         poll_interval: Option<u64>,
 
@@ -131,7 +131,7 @@ enum Commands {
         #[arg(long, value_enum)]
         output: Option<OutputArg>,
 
-        /// Wait for completion via webhook listener instead of API polling
+        /// Await completion via webhook listener instead of API polling
         #[arg(long)]
         webhook: bool,
 
@@ -143,7 +143,7 @@ enum Commands {
         #[arg(long, env = "GITHUB_WEBHOOK_SECRET")]
         webhook_secret: Option<String>,
 
-        /// Stream logs while waiting for completion
+        /// Stream logs while awaiting completion
         #[arg(long)]
         follow_logs: bool,
     },
@@ -279,14 +279,14 @@ async fn main() -> anyhow::Result<()> {
             exitcode::OK
         }
 
-        Some(Commands::Run {
+        Some(Commands::Spawn {
             repo,
             workflow,
             r#ref,
             token,
             base_dir,
             args,
-            wait: should_wait,
+            r#await: should_await,
             timeout,
             poll_interval,
             output,
@@ -339,7 +339,7 @@ async fn main() -> anyhow::Result<()> {
             };
 
             // Parse input arguments
-            let inputs = match run::parse_input_args(args) {
+            let inputs = match spawn::parse_input_args(args) {
                 Err(e) => {
                     error!("Invalid input arguments: {e}");
                     process::exit(exitcode::SOFTWARE);
@@ -347,29 +347,29 @@ async fn main() -> anyhow::Result<()> {
                 Ok(inputs) => inputs,
             };
 
-            if *follow_logs && !*should_wait {
-                error!("--follow-logs requires --wait");
+            if *follow_logs && !*should_await {
+                error!("--follow-logs requires --await");
                 process::exit(exitcode::USAGE);
             }
 
-            // Run the workflow
-            if let Err(e) = run::run_workflow(&repo, workflow, &repo_ref, &auth, &inputs).await {
+            // Spawn the workflow
+            if let Err(e) = spawn::spawn_workflow(&repo, workflow, &repo_ref, &auth, &inputs).await {
                 error!("Workflow execution failed: {e}");
                 process::exit(exitcode::SOFTWARE);
             }
 
-            // If --wait, fetch the run ID and wait for completion
-            if *should_wait {
-                match wait::get_run_id_after_dispatch(&repo, workflow, &repo_ref, &auth.token).await {
+            // If --await, fetch the run ID and await completion
+            if *should_await {
+                match awaiting::get_run_id_after_dispatch(&repo, workflow, &repo_ref, &auth.token).await {
                     Err(e) => {
                         error!("Failed to get workflow run ID: {e}");
                         process::exit(exitcode::SOFTWARE);
                     }
                     Ok(run_id) => {
-                        info!("Waiting for workflow run {} to complete...", run_id);
+                        info!("Awaiting workflow run {} to complete...", run_id);
 
-                        // Build wait options from CLI args
-                        let mut opts = wait::WaitOptions::default();
+                        // Build await options from CLI args
+                        let mut opts = awaiting::AwaitOptions::default();
                         if let Some(t) = timeout { opts.timeout_secs = *t; }
                         if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
                         if let Some(fmt) = output { opts.output_format = (*fmt).clone().into(); }
@@ -400,24 +400,24 @@ async fn main() -> anyhow::Result<()> {
                             None
                         };
 
-                        match wait::wait_for_run(&repo, run_id, &auth.token, &opts).await {
+                        match awaiting::await_run(&repo, run_id, &auth.token, &opts).await {
                             Err(e) => {
                                 if let Some(handle) = log_task {
                                     handle.abort();
                                 }
-                                error!("Failed to wait for run: {e}");
+                                error!("Failed to await run: {e}");
                                 process::exit(exitcode::SOFTWARE);
                             }
                             Ok(run) => {
                                 if let Some(handle) = log_task {
                                     handle.abort();
                                 }
-                                let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(wait::WorkflowRunConclusion::Neutral);
+                                let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(awaiting::WorkflowRunConclusion::Neutral);
                                 match opts.output_format {
-                                    wait::OutputFormat::Human => {
+                                    awaiting::OutputFormat::Human => {
                                         info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
                                     }
-                                    wait::OutputFormat::Json => {
+                                    awaiting::OutputFormat::Json => {
                                         if let Ok(json) = run.to_json() {
                                             println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
                                         }
@@ -433,7 +433,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::Wait { repo, run_id, token, timeout, poll_interval, output, webhook, webhook_port, webhook_secret, follow_logs }) => {
+        Some(Commands::Await { repo, run_id, token, timeout, poll_interval, output, webhook, webhook_port, webhook_secret, follow_logs }) => {
             // Resolve authentication
             let auth = match auth::GithubAuth::resolve(token.clone()) {
                 Err(e) => {
@@ -443,8 +443,8 @@ async fn main() -> anyhow::Result<()> {
                 Ok(auth) => auth,
             };
 
-            // Build wait options from CLI args
-            let mut opts = wait::WaitOptions::default();
+            // Build await options from CLI args
+            let mut opts = awaiting::AwaitOptions::default();
             if let Some(t) = timeout { opts.timeout_secs = *t; }
             if let Some(p) = poll_interval { opts.poll_interval_ms = *p; }
             if let Some(fmt) = output { opts.output_format = (*fmt).clone().into(); }
@@ -476,25 +476,25 @@ async fn main() -> anyhow::Result<()> {
                 None
             };
 
-            // Wait for the run
-            match wait::wait_for_run(repo, *run_id, &auth.token, &opts).await {
+            // Await the run
+            match awaiting::await_run(repo, *run_id, &auth.token, &opts).await {
                 Err(e) => {
                     if let Some(handle) = log_task {
                         handle.abort();
                     }
-                    error!("Failed to wait for run: {e}");
+                    error!("Failed to await run: {e}");
                     process::exit(exitcode::SOFTWARE);
                 }
                 Ok(run) => {
                     if let Some(handle) = log_task {
                         handle.abort();
                     }
-                    let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(wait::WorkflowRunConclusion::Neutral);
+                    let conclusion = run.conclusion.as_ref().map(|c| c.clone()).unwrap_or(awaiting::WorkflowRunConclusion::Neutral);
                     match opts.output_format {
-                        wait::OutputFormat::Human => {
+                        awaiting::OutputFormat::Human => {
                             info!("Workflow run completed: {} — {}", conclusion.display(), run.html_url);
                         }
-                        wait::OutputFormat::Json => {
+                        awaiting::OutputFormat::Json => {
                             if let Ok(json) = run.to_json() {
                                 println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
                             }

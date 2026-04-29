@@ -2,9 +2,9 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 #[test]
-fn wait_command_help_shows_new_flags() {
+fn await_command_help_shows_new_flags() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
-    cmd.args(["wait", "--help"])
+    cmd.args(["await", "--help"])
         .assert()
         .success()
         .stdout(predicate::str::contains("--timeout"))
@@ -15,9 +15,9 @@ fn wait_command_help_shows_new_flags() {
 }
 
 #[test]
-fn wait_command_rejects_invalid_output_value() {
+fn await_command_rejects_invalid_output_value() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
-    cmd.args(["wait", "--repo", "owner/repo", "123", "--output", "xml"])
+    cmd.args(["await", "--repo", "owner/repo", "123", "--output", "xml"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("possible values"));

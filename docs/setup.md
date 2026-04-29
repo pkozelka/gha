@@ -41,9 +41,9 @@ GITHUB_TOKEN=ghp_xxxx
 
 ## Optional Feature Setup
 
-### Webhook Waiting (`--webhook`)
+### Webhook Awaiting (`--webhook`)
 
-Only needed if you use webhook mode (`gha wait --webhook` or `gha run --wait --webhook`).
+Only needed if you use webhook mode (`gha await --webhook` or `gha spawn --await --webhook`).
 
 Required:
 
@@ -68,10 +68,10 @@ GitHub webhook settings:
 
 No special setup required beyond normal API auth.
 
-Usage (must include waiting):
+Usage (must include awaiting):
 
 ```bash
-gha run deploy.yml --wait --follow-logs
+gha spawn deploy.yml --await --follow-logs
 ```
 
 ### Artifact Download (`artifacts`)

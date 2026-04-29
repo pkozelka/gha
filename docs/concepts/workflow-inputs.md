@@ -1,6 +1,6 @@
 # Concept: Workflow Inputs
 
-`gha run` passes workflow inputs as trailing positional arguments.
+`gha spawn` passes workflow inputs as trailing positional arguments.
 
 ## Input Formats
 
@@ -12,11 +12,11 @@ Supported forms:
 Examples:
 
 ```bash
-gha run deploy.yml environment=prod version=1.2.3
+gha spawn deploy.yml environment=prod version=1.2.3
 ```
 
 ```bash
-gha run deploy.yml release_notes=@./notes.txt
+gha spawn deploy.yml release_notes=@./notes.txt
 ```
 
 In `@file` mode, file contents are read and sent as a string value.
@@ -26,13 +26,13 @@ In `@file` mode, file contents are read and sent as a string value.
 ### JSON payload as one input
 
 ```bash
-gha run deploy.yml config=@./config.json
+gha spawn deploy.yml config=@./config.json
 ```
 
 ### Multi-input dispatch
 
 ```bash
-gha run deploy.yml environment=staging version=2.0.0 dry_run=true
+gha spawn deploy.yml environment=staging version=2.0.0 dry_run=true
 ```
 
 ## Validation
@@ -42,7 +42,7 @@ Malformed inputs (missing `=`) are rejected.
 Example that fails:
 
 ```bash
-gha run deploy.yml invalid_input
+gha spawn deploy.yml invalid_input
 ```
 
 ## Completion for Choice Inputs

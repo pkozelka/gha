@@ -14,7 +14,7 @@ fn shows_help() {
 fn runs_with_workflow() {
     let mut cmd = Command::new(assert_cmd::cargo_bin!("gha"));
     // Should fail with authentication/network error, not argument parsing error
-    cmd.args(&["run", "test.yml", "--repo", "owner/repo", "-b", "main", "--token", "test"])
+    cmd.args(&["spawn", "test.yml", "--repo", "owner/repo", "-b", "main", "--token", "test"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("").or(predicate::str::contains(".")));

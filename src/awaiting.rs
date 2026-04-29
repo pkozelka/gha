@@ -3,10 +3,10 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use tracing::debug;
 
-/// Options for waiting for a workflow run
+/// Options for awaiting a workflow run
 #[derive(Debug, Clone)]
-pub struct WaitOptions {
-    /// Maximum time to wait in seconds (default: 3600 = 1 hour)
+pub struct AwaitOptions {
+    /// Maximum time to await in seconds (default: 3600 = 1 hour)
     pub timeout_secs: u64,
     /// Polling interval in milliseconds (default: 500)
     pub poll_interval_ms: u64,
@@ -18,11 +18,11 @@ pub struct WaitOptions {
     pub webhook_port: u16,
     /// Webhook secret used for HMAC signature verification
     pub webhook_secret: Option<String>,
-    /// Stream run logs while waiting
+    /// Stream run logs while awaiting
     pub follow_logs: bool,
 }
 
-impl Default for WaitOptions {
+impl Default for AwaitOptions {
     fn default() -> Self {
         Self {
             timeout_secs: 3600,
@@ -185,22 +185,22 @@ impl WorkflowRun {
     }
 }
 
-/// Wait for a workflow run to complete, polling the GitHub API.
+/// Await a workflow run to complete, polling the GitHub API.
 ///
 /// Polls `GET /repos/{repo}/actions/runs/{run_id}` until the run is completed.
 /// Returns the final run state and conclusion.
-pub async fn wait_for_run(
+pub async fn await_run(
     repo: &str,
     run_id: u64,
     auth_token: &str,
-    options: &WaitOptions,
+    options: &AwaitOptions,
 ) -> Result<WorkflowRun> {
     if options.use_webhook {
         let secret = options
             .webhook_secret
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("webhook mode requires a webhook secret"))?;
-        return crate::webhook::wait_for_run_via_webhook(
+        return crate::webhook::await_run_via_webhook(
             repo,
             run_id,
             options.timeout_secs,
@@ -272,11 +272,11 @@ pub async fn wait_for_run(
                 return Ok(run);
             }
             WorkflowRunStatus::Queued => {
-                debug!("Run is queued, waiting...");
+                debug!("Run is queued, awaiting...");
                 tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
             }
             WorkflowRunStatus::InProgress => {
-                debug!("Run is in progress, waiting...");
+                debug!("Run is in progress, awaiting...");
                 tokio::time::sleep(Duration::from_millis(poll_interval_ms)).await;
             }
         }

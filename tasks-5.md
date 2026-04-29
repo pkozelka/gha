@@ -1,4 +1,4 @@
-# Task 5 - Webhook-Based Waiting (Branch: feature/webhook-wait)
+# Task 5 - Webhook-Based Waiting (Branch: feature/webhook-await)
 
 Use GitHub webhooks instead of polling for more efficient long-running workflow monitoring.
 
@@ -19,8 +19,8 @@ Instead of polling the GitHub API every 0.5 seconds (which hits rate limits on l
    - No polling needed - event-driven
 
 3. **New command or flag**
-   - `gha wait --webhook` — Use webhook instead of polling
-   - `gha run --wait --webhook` — Same for run command
+   - `gha await --webhook` — Use webhook instead of polling
+   - `gha spawn --await --webhook` — Same for run command
    - Still requires GitHub to be able to reach your local machine
    - Better for CI/CD environments or long-running workflows
 
@@ -30,7 +30,7 @@ Instead of polling the GitHub API every 0.5 seconds (which hits rate limits on l
    - Events: `workflow_runs`
    - No need for this to be public (can be private network)
 
-## Implementation (Branch feature/webhook-wait)
+## Implementation (Branch feature/webhook-await)
 
 New module `src/webhook.rs`:
 - `struct WebhookServer { listener, secret_key }`
@@ -42,7 +42,7 @@ New module `src/webhook.rs`:
 
 Update `src/main.rs`:
 - Add `--webhook` flag to Run and Wait commands
-- Pass to `wait_for_run()` as part of `WaitOptions`
+- Pass to `await_run()` as part of `AwaitOptions`
 - Choose between polling vs. webhook based on flag
 
 ## Notes
@@ -54,7 +54,7 @@ Update `src/main.rs`:
 
 ## Branch Management
 
-- Create feature branch: `git checkout -b feature/webhook-wait`
+- Create feature branch: `git checkout -b feature/webhook-await`
 - Implement webhook logic in this branch
 - Can merge later when fully tested
 - Polling remains the default
