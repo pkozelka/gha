@@ -1,4 +1,4 @@
-# Task 3 - Configurable Wait Options
+# Task 3 - Configurable Await Options
 
 Implement `--timeout`, `--poll-interval`, and `--output json/human` options for both `gha spawn --await` and `gha await` commands.
 
@@ -33,9 +33,9 @@ Implement `--timeout`, `--poll-interval`, and `--output json/human` options for 
 - [x] Add `WorkflowRun::to_json()` method
 
 ### Changes to src/main.rs
-- [x] Add `--timeout <SECS>` flag to both Run and Wait commands
-- [x] Add `--poll-interval <MS>` flag to both Run and Wait commands  
-- [x] Add `--output <FORMAT>` flag to both Run and Wait commands
+- [x] Add `--timeout <SECS>` flag to both Spawn and Await commands
+- [x] Add `--poll-interval <MS>` flag to both Spawn and Await commands  
+- [x] Add `--output <FORMAT>` flag to both Spawn and Await commands
 - [x] Parse these flags and build `AwaitOptions` struct
 - [x] Pass options to `await_run()` calls
 - [x] Output JSON before exit if `output_format == Json`
@@ -52,7 +52,7 @@ Exit codes remain unchanged - derived from `WorkflowRunConclusion` enum, not aff
 ## Example Commands
 
 ```bash
-# Wait with 10 minute timeout
+# Await with 10 minute timeout
 gha spawn ci.yml --await --timeout 600 env=prod
 
 # Fast polling every 100ms

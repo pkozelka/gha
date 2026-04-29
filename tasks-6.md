@@ -42,7 +42,7 @@ New module `src/logs.rs`:
 - Return when all steps complete
 
 Update `src/main.rs`:
-- Add `--follow-logs` flag to Run and Wait
+- Add `--follow-logs` flag to Spawn and Await
 - Spawn tokio task for log streaming if flag set
 - Continue polling for completion in main task
 - Join tasks before exit

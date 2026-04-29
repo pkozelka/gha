@@ -82,12 +82,12 @@ This document outlines the design decisions and implementation approach for the 
 - Integrated auth module with token resolution logic
 
 #### `tests/cli.rs`
-- Removed old test for placeholder `Run` command (with `--name` flag)
+- Removed old test for placeholder `Spawn` command (with `--name` flag)
 - Added test for new `spawn` command with required `--workflow` parameter
 - Maintained existing tests for help and missing-command failure
 
 #### `tests/spawn.rs`
-- New integration test file for run command
+- New integration test file for spawn command
 - Tests: help display, argument validation, required field enforcement
 
 #### `Cargo.toml`
@@ -212,7 +212,7 @@ Manual testing checklist:
 
 ## Known Limitations
 
-1. **No Workflow Validation**: Run command doesn't check if workflow exists before dispatch
+1. **No Workflow Validation**: Spawn command doesn't check if workflow exists before dispatch
    - GitHub API returns 404 after submission if not found
    - Could be improved by pre-fetching workflow list
 
@@ -230,7 +230,7 @@ Manual testing checklist:
 
 ## Commit History
 
-1. Add run command infrastructure with auth and HTTP dispatch
+1. Add spawn command infrastructure with auth and HTTP dispatch
 2. Add integration tests for gha spawn command
 3. Add shell completion support and improve logging
 4. Make run CLI match task spec: positional workflow, -b for branch, trailing args
@@ -241,13 +241,13 @@ Manual testing checklist:
 - `src/auth.rs` - Authentication handling
 - `src/spawn.rs` - Workflow execution
 - `src/completion.rs` - Shell completion generation with dynamic choice support
-- `tests/spawn.rs` - Integration tests for the run command
+- `tests/spawn.rs` - Integration tests for the spawn command
 - `tests/deploy.yml` - Fixture for choice-input completion tests
 
 ## Files Modified
 
-- `src/main.rs` - New Run and Completion commands, logging improvements
-- `tests/cli.rs` - Updated tests for new Run command
+- `src/main.rs` - New Spawn and Completion commands, logging improvements
+- `tests/cli.rs` - Updated tests for new Spawn command
 - `Cargo.toml` - Added clap_complete dependency
 
 Total lines added: ~650 (including tests and documentation)

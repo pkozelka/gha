@@ -3,7 +3,7 @@
 ## Decisions
 
 - CLI parsing for `--output` is implemented with a typed clap `ValueEnum` (`human`/`json`) instead of manual string parsing.
-- Wait configuration is centralized in `awaiting::AwaitOptions` and shared by both `gha spawn --await` and `gha await`.
+- Await configuration is centralized in `awaiting::AwaitOptions` and shared by both `gha spawn --await` and `gha await`.
 - Output handling is applied only to final run result:
   - `human`: logs a concise status line with run URL
   - `json`: prints structured JSON to stdout

@@ -67,7 +67,7 @@ pub struct WorkflowRun {
 
 #### New Commands
 - **`Run --await`**: dispatches workflow + polls until completion
-- **`Wait`**: standalone command to wait for a run by ID
+- **`Await`**: standalone command to await a workflow execution by ID
 
 #### Spawn Command Signature
 ```

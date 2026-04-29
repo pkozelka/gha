@@ -8,7 +8,7 @@ All four tasks have been fully planned and documented. The infrastructure founda
 
 ---
 
-## Task 3: Configurable Wait Options ✓ INFRASTRUCTURE IN PLACE
+## Task 3: Configurable Await Options ✓ INFRASTRUCTURE IN PLACE
 
 **Documentation**: `tasks-3.md`  
 **Status**: Foundation complete, awaiting CLI flag additions
@@ -21,9 +21,9 @@ All four tasks have been fully planned and documented. The infrastructure founda
 - Default implementations and validation
 
 ### What remains
-- Add `--timeout <SECS>` U64 arg to Run and Wait commands
-- Add `--poll-interval <MS>` U64 arg to Run and Wait commands
-- Add `--output <FORMAT>` flag to Run and Wait commands
+- Add `--timeout <SECS>` U64 arg to Spawn and Await commands
+- Add `--poll-interval <MS>` U64 arg to Spawn and Await commands
+- Add `--output <FORMAT>` flag to Spawn and Await commands
 - Update command handlers to build `AwaitOptions` struct from CLI args
 - Output JSON before exit if `output_format == Json`
 - Tests for timeout behavior, intervals, and JSON output

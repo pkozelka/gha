@@ -20,7 +20,7 @@ Instead of polling the GitHub API every 0.5 seconds (which hits rate limits on l
 
 3. **New command or flag**
    - `gha await --webhook` — Use webhook instead of polling
-   - `gha spawn --await --webhook` — Same for run command
+   - `gha spawn --await --webhook` — Same for spawn command
    - Still requires GitHub to be able to reach your local machine
    - Better for CI/CD environments or long-running workflows
 
@@ -41,7 +41,7 @@ New module `src/webhook.rs`:
 - Return when correct run_id completes
 
 Update `src/main.rs`:
-- Add `--webhook` flag to Run and Wait commands
+- Add `--webhook` flag to Spawn and Await commands
 - Pass to `await_run()` as part of `AwaitOptions`
 - Choose between polling vs. webhook based on flag
 
