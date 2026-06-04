@@ -139,14 +139,14 @@ _eval:
 	test $(shell cat "$(JOB_DIR)/conclusion.txt") == "success" # see $(JOB_DIR)/
 
 await-all:
-	cat "$(__GHA_RECENT__)" | while read -r DIR; do \
+	cat "$(__GHA_RECENT__)" | while read -r DIR WORKFLOW _R; do \
 	  $(MAKE) -f $(firstword $(MAKEFILE_LIST)) await JOB_DIR="$$DIR"; \
 	done
 
 clean:
 	cp "$(__GHA_RECENT__)" "$(__GHA_RECENT__).bak"
-	cat "$(__GHA_RECENT__).bak" | while read -r DIR; do \
+	cat "$(__GHA_RECENT__).bak" | while read -r DIR WORKFLOW _R; do \
 	  rm -rfv "$$DIR"; \
-	  sed -i -e '1d' "$(__GHA_RECENT__)"; \
+	  sed -i'' -e '1d' "$(__GHA_RECENT__)"; \
 	done
 	rm -f "$(__GHA_RECENT__).bak"
